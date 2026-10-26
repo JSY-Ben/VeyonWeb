@@ -24,7 +24,13 @@ The commands below assume Debian/Ubuntu, mod_php, systemd and an installation at
 
 2. Edit `web/config/local.php`. In the `veyon` section, set your teacher username, key name and private-key path. Install the matching public key on the classroom PCs. For logon authentication, set `method` to `logon` and provide the Veyon username and password.
 
-3. Give the PHP web process and gateway service account read access to the configuration and private key, and write access to `web/data/`. Keep credentials private. The supplied service uses `www-data`.
+3. Set `data_directory` in `web/config/local.php` to an absolute path for the database, gateway log and PID file. Setup prompts for this location; the default is `/var/www/html/VeyonWeb/web/data`. Create it before starting the service:
+
+   ```sh
+   sudo install -d -o www-data -g www-data -m 0750 /var/www/html/VeyonWeb/web/data
+   ```
+
+   Substitute your chosen directory. Give the PHP web process and gateway service account read access to the configuration and private key, and write access to that directory. Keep credentials private. The supplied service uses `www-data`. Existing configurations with a `database` entry continue using that file; remove that entry to use `data_directory` for the database. Move existing data while the services are stopped if changing its location.
 
 4. Enable Apache's modules and copy the virtual host configuration:
 
@@ -50,7 +56,7 @@ The commands below assume Debian/Ubuntu, mod_php, systemd and an installation at
    sudo cp /var/www/html/VeyonWeb/web/deploy/veyon-gateway.service /etc/systemd/system/
    ```
 
-   The [supplied service](web/deploy/veyon-gateway.service) uses `/var/www/html/VeyonWeb` and `www-data`. Adjust these if needed, then start it:
+   The [supplied service](web/deploy/veyon-gateway.service) uses `/var/www/html/VeyonWeb` and `www-data`. Adjust these if needed. Set `ReadWritePaths` in the installed service to your `data_directory` (or the parent directory of an explicit `database` file). systemd cannot read the PHP configuration, so both locations must match. Then start it:
 
    ```sh
    sudo systemctl daemon-reload

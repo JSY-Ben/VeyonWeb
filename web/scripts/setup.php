@@ -23,10 +23,14 @@ try {
     if(strlen($password)<12||strlen($password)>72)throw new RuntimeException('Use a password of 12–72 bytes.');
     if(!hash_equals($password,secret('Confirm password: ')))throw new RuntimeException('Passwords did not match.');
     $config['origin']=$origin;$config['teacher_password_hash']=password_hash($password,defined('PASSWORD_ARGON2ID')?PASSWORD_ARGON2ID:PASSWORD_DEFAULT);
-    // Resolve the example’s relative database path before writing configuration.
-    $config['database']=dirname(__DIR__).'/data/classroom.sqlite';
+    $defaultDirectory=$config['data_directory'] ?? dirname($config['database'] ?? dirname(__DIR__).'/data/classroom.sqlite');
+    $directory=ask('Data directory ['.$defaultDirectory.']: ') ?: $defaultDirectory;
+    if(!str_starts_with($directory,'/') || str_contains($directory,"\0"))throw new RuntimeException('Use an absolute data directory path.');
+    $config['data_directory']=rtrim($directory,'/') ?: '/';
+    if(isset($config['database']) && $directory!==$defaultDirectory)$config['database']=rtrim($directory,'/').'/'.basename($config['database']);
     $data="<?php\ndeclare(strict_types=1);\nreturn ".var_export($config,true).";\n";
     $old=umask(0027);
     try{if(file_put_contents($path.'.tmp',$data,LOCK_EX)===false)throw new RuntimeException('Cannot write configuration.');chmod($path.'.tmp',0640);rename($path.'.tmp',$path);}finally{umask($old);}
     echo "Teacher login saved in config/local.php. Configure the Veyon key or logon credentials there, then start the PHP gateway.\n";
+    echo "Create the data directory with www-data ownership and set the gateway service ReadWritePaths to: ".$config['data_directory']."\n";
 }catch(Throwable $error){fwrite(STDERR,$error->getMessage()."\n");exit(1);}

@@ -17,6 +17,8 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
+# Must exist before startup and match data_directory in config/local.php
+# (or the parent directory of an explicitly configured database file).
 ReadWritePaths=/var/www/html/VeyonWeb/web/data
 
 [Install]

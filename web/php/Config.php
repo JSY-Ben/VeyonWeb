@@ -11,13 +11,19 @@ final class Config
         if (!is_array($values)) throw new \RuntimeException('Configuration must return an array.');
         $config = array_replace_recursive([
             'origin' => 'http://127.0.0.1:8080', 'teacher_username' => 'teacher', 'teacher_password_hash' => '',
-            'database' => dirname(__DIR__) . '/data/classroom.sqlite',
+            'data_directory' => dirname(__DIR__) . '/data',
             'gateway_listen' => 'websocket://127.0.0.1:9001', 'websocket_url' => '/remote',
             'demo' => false, 'veyon' => ['method' => 'key', 'username' => 'teacher', 'key_name' => 'teacher', 'private_key_file' => '', 'password' => ''],
         ], $values);
+        if (!is_string($config['data_directory']) || !str_starts_with($config['data_directory'], '/') || str_contains($config['data_directory'], "\0")) {
+            throw new \RuntimeException('Configure data_directory as an absolute directory path.');
+        }
+        $config['data_directory'] = rtrim($config['data_directory'], '/') ?: '/';
+        // Preserve existing installations that explicitly configured a database file.
+        $config['database'] = $values['database'] ?? rtrim($config['data_directory'], '/') . '/classroom.sqlite';
         if (getenv('VEYON_DEMO') === '1') {
             $config['demo'] = true;
-            $config['database'] = dirname(__DIR__) . '/data/demo.sqlite';
+            $config['database'] = rtrim($config['data_directory'], '/') . '/demo.sqlite';
         }
         $url = parse_url($config['origin']);
         if (!$url || !in_array($url['scheme'] ?? '', ['https', 'http'], true) || empty($url['host']) || isset($url['path']) || isset($url['query']) || isset($url['fragment']) || isset($url['user'])) {
