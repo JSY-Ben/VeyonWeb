@@ -2,6 +2,8 @@
 
 Welcome to VeyonWeb! A PHP Web Dashboard for viewing and remotely controlling Veyon classroom computers!
 
+**Please Note - This Software is still in Beta. I encourage everyone to use this, but I would not rely on it in a production environment just yet! Please report any bugs and/or feature requests in the 'Issues' tab**
+
 Once installed, you can add any computer with a Veyon installation onto the dashboard, group them into particular classroms, create users who can login to the dashboard and give them appropriate permissions to specific features and groups. 
 
 Supported Veyon features include screenshots, text messages, screen lock/unlock, opening websites, running programs, Wake-on-LAN, restart/shutdown/logoff, and file distribution.
