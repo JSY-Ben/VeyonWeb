@@ -156,6 +156,7 @@ main{margin-left:280px;width:calc(100% - 280px);min-width:0}
 .panel-footer>span,.panel-footer>div{display:flex;align-items:center;gap:10px}
 .panel-footer>span svg{width:18px;height:18px}
 .workspace-footer{display:flex;justify-content:space-between;padding:24px 0;color:var(--muted);font-size:14px}
+.workspace-footer a{text-decoration:underline;text-underline-offset:3px}
 .empty-state{text-align:center;padding:60px 24px;color:var(--muted)}
 .empty-state>span{display:grid;place-items:center;margin:0 auto 20px;width:60px;height:60px;background:var(--surface-alt);border-radius:14px}
 .empty-state h3{color:var(--ink);font-size:22px}
