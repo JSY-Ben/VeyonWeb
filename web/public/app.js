@@ -216,7 +216,6 @@ async function loadClassroom() {
   $('#overview-refresh').value=state.overviewRefreshSeconds;
   $('#settings-notice').textContent=state.canManage?(data.settingsNotice||''):'';$('#settings-notice').hidden=!state.canManage||!data.settingsNotice;
   $('#demo-banner').hidden = !state.demo; $('#network-label').textContent = state.demo ? 'Sample workspace' : 'Local gateway';
-  $('.local-badge').innerHTML = `<span class="dot"></span>${state.demo ? 'Sample mode' : 'School network'}`;
   restoreClassroom();state.monitoring = state.ready || state.demo; render();
 }
 function showHelp() {
@@ -249,7 +248,7 @@ $('#overview-refresh').onchange=event=>{
   state.overviewRefreshSeconds=seconds;try{localStorage.setItem(refreshStorageKey,String(seconds));}catch{}
   updateOverviewHint();if(state.monitoring&&!state.remote&&!document.hidden)connectOverview(currentPage());
 };
-for (const id of ['top-help','demo-setup']) $(`#${id}`).onclick=showHelp;
+$('#demo-setup').onclick=showHelp;
 document.querySelectorAll('.close-dialog').forEach(b => b.onclick=()=>b.closest('dialog').close());
 function editComputer(id) {
   if(!state.canManage){toast('Only administrators can edit the classroom directory.');return;}
