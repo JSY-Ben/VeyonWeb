@@ -1,4 +1,4 @@
-export function waitForFrame(rfb, {signal, timeout = 2000} = {}) {
+export function waitForFrame(rfb, {signal, timeout = 10000} = {}) {
   if (signal?.aborted) return Promise.reject(new DOMException('Snapshot cancelled.', 'AbortError'));
   if (rfb.hasFrame) return Promise.resolve();
   return new Promise((resolve,reject)=>{
@@ -14,7 +14,7 @@ export function waitForFrame(rfb, {signal, timeout = 2000} = {}) {
   });
 }
 
-export async function captureDesktop(computer, makeRFB, {signal, timeout=2000} = {}) {
+export async function captureDesktop(computer, makeRFB, {signal, timeout=10000} = {}) {
   if(signal?.aborted)throw new DOMException('Snapshot cancelled.','AbortError');
   const staging=document.createElement('div');staging.className='screenshot-staging';document.body.append(staging);
   const controller=new AbortController();let rfb,disconnected=false,timedOut=false;
@@ -38,34 +38,52 @@ export async function captureDesktop(computer, makeRFB, {signal, timeout=2000} =
   finally{clearTimeout(timer);signal?.removeEventListener('abort',cancel);controller.signal.removeEventListener('abort',onAbort);}
 }
 
-// Capture one computer at a time, with breathing room between connections.
+// A bounded pool with spaced starts and independent deadlines for each PC.
 export class SnapshotOverview {
-  constructor({capture,onSnapshot,onError,interval=10000,stagger=750,schedule=(callback,delay)=>globalThis.setTimeout(callback,delay),unschedule=timer=>globalThis.clearTimeout(timer),now=Date.now}) {
-    Object.assign(this,{capture,onSnapshot,onError,interval,stagger,schedule,unschedule,now});
+  constructor({capture,onSnapshot,onError,interval=30000,retry=60000,concurrency=3,stagger=300,priority=()=>0,schedule=(callback,delay)=>globalThis.setTimeout(callback,delay),unschedule=timer=>globalThis.clearTimeout(timer),now=Date.now}) {
+    Object.assign(this,{capture,onSnapshot,onError,interval,retry,concurrency,stagger,priority,schedule,unschedule,now});
   }
-  start(computers){this.stop();this.controller=new AbortController();this.round(computers,this.controller.signal);}
-  stop(){this.controller?.abort();if(this.timer!==undefined)this.unschedule(this.timer);this.timer=undefined;}
-  pause(signal){
-    if(signal.aborted)return Promise.resolve();
-    return new Promise(resolve=>{
-      const finish=()=>{this.unschedule(timer);signal.removeEventListener('abort',finish);resolve();};
-      const timer=this.schedule(finish,this.stagger);signal.addEventListener('abort',finish,{once:true});
-    });
+  start(computers){
+    this.stop();
+    const seen=new Set();
+    this.session={controller:new AbortController(),active:0,nextStart:this.now(),timer:undefined,
+      entries:computers.filter(computer=>{if(seen.has(computer.id))return false;seen.add(computer.id);return true;}).map(computer=>({computer,due:this.now(),active:false}))};
+    this.pump(this.session);
   }
-  async round(computers,signal){
-    const started=this.now();
-    for(let i=0;i<computers.length&&!signal.aborted;i++){
-      if(i>0)await this.pause(signal);
-      if(signal.aborted)break;
-      const computer=computers[i];
-      try{const blob=await this.capture(computer,signal);if(!signal.aborted)this.onSnapshot(computer,blob);}
-      catch(error){
-        if(!signal.aborted){
-          // A broken status element must not prevent the remaining PCs loading.
-          try{this.onError(computer,error);}catch(reportError){console.error('Could not update preview status.',reportError);}
-        }
+  stop(){
+    const session=this.session;if(!session)return;
+    session.controller.abort();if(session.timer!==undefined)this.unschedule(session.timer);this.session=null;
+  }
+  pump(session){
+    if(session.controller.signal.aborted)return;
+    if(session.timer!==undefined){this.unschedule(session.timer);session.timer=undefined;}
+    while(session.active<this.concurrency){
+      let next,earliest;const time=this.now();
+      for(const entry of session.entries){
+        if(entry.active)continue;
+        if(!earliest||entry.due<earliest.due)earliest=entry;
+        if(entry.due<=time&&(!next||this.priority(entry.computer)<this.priority(next.computer)||(this.priority(entry.computer)===this.priority(next.computer)&&entry.due<next.due)))next=entry;
       }
+      next??=earliest;
+      if(!next)return;
+      const delay=Math.max(next.due,session.nextStart)-this.now();
+      if(delay>0){session.timer=this.schedule(()=>{session.timer=undefined;this.pump(session);},delay);return;}
+      next.active=true;session.active++;session.nextStart=this.now()+this.stagger;
+      this.run(next,session);
     }
-    if(!signal.aborted&&computers.length)this.timer=this.schedule(()=>this.round(computers,signal),Math.max(this.stagger,this.interval-(this.now()-started)));
+  }
+  async run(entry,session){
+    const signal=session.controller.signal;
+    try{
+      // Defer invocation so even a synchronous capture failure cannot recurse
+      // into the scheduler while it is filling the pool.
+      const blob=await Promise.resolve().then(()=>signal.aborted?undefined:this.capture(entry.computer,signal));
+      if(!signal.aborted){entry.due=this.now()+this.interval;this.onSnapshot(entry.computer,blob);}
+    }catch(error){
+      if(!signal.aborted){
+        entry.due=this.now()+this.retry;
+        try{this.onError(entry.computer,error);}catch(reportError){console.error('Could not update preview status.',reportError);}
+      }
+    }finally{entry.active=false;session.active--;if(!signal.aborted)this.pump(session);}
   }
 }

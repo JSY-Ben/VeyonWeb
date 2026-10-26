@@ -16,7 +16,7 @@ for (const automatic of [false, true]) test(`subdirectory page, assets, API and 
   try {
     await mkdir(path.join(dir,'tools'));
     await symlink(path.resolve('public'),path.join(dir,'tools/veyon'));
-    const config={origin,base_path:automatic ? null : prefix,demo:true,data_directory:dir,overview_refresh_seconds:17,connection_timeout_seconds:7};
+    const config={origin,base_path:automatic ? null : prefix,demo:true,data_directory:dir,overview_refresh_seconds:17,connection_timeout_seconds:7,overview_max_connections:4,overview_stagger_ms:400,overview_retry_seconds:75,preview_timeout_seconds:12};
     const configPath=path.join(dir,'config.php');
     await writeFile(configPath,`<?php return json_decode(base64_decode('${Buffer.from(JSON.stringify(config)).toString('base64')}'), true);`);
     child=spawn('php',['-S',`127.0.0.1:${port}`,'-t',dir],{env:{...process.env,CLASSROOM_CONFIG:configPath},stdio:'ignore'});
@@ -32,7 +32,7 @@ for (const automatic of [false, true]) test(`subdirectory page, assets, API and 
     assert.equal(login.status,200);assert.ok(login.headers.get('set-cookie').includes(`path=${prefix}/`));
     const cookie=login.headers.get('set-cookie').split(';')[0];
     const authenticated=await (await fetch(endpoint('/api/session'),{headers:{Cookie:cookie}})).json();assert.equal(authenticated.authenticated,true);
-    const computers=await (await fetch(endpoint('/api/computers'),{headers:{Cookie:cookie}})).json();assert.equal(computers.overviewRefreshSeconds,17);assert.equal(computers.connectionTimeoutSeconds,7);
+    const computers=await (await fetch(endpoint('/api/computers'),{headers:{Cookie:cookie}})).json();assert.equal(computers.overviewRefreshSeconds,17);assert.equal(computers.connectionTimeoutSeconds,7);assert.equal(computers.previewTimeoutSeconds,12);assert.equal(computers.overviewMaxConnections,4);assert.equal(computers.overviewStaggerMs,400);assert.equal(computers.overviewRetrySeconds,75);
   } finally {
     if(child){child.kill();await once(child,'exit');}
     await rm(dir,{recursive:true,force:true});

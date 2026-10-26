@@ -3,41 +3,61 @@ import assert from 'node:assert/strict';
 import {SnapshotOverview,waitForFrame,captureDesktop} from '../public/snapshots.js';
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 
-test('default browser timers retain their Window receiver across the stagger gap',async()=>{
+function fakeClock(){
+  let time=0,id=0;const timers=new Map();
+  return {now:()=>time,schedule:(callback,delay)=>{timers.set(++id,{callback,at:time+delay});return id;},unschedule:id=>timers.delete(id),timers,
+    async advance(ms){const end=time+ms;while(true){const next=[...timers].sort((a,b)=>a[1].at-b[1].at)[0];if(!next||next[1].at>end)break;time=next[1].at;timers.delete(next[0]);next[1].callback();await tick();}time=end;await tick();}};
+}
+
+test('default browser timers retain their Window receiver across staggered starts',async()=>{
   const originalSet=globalThis.setTimeout,originalClear=globalThis.clearTimeout;
-  const timers=[];let overview;
+  const timers=[];let overview,time=0;
   globalThis.setTimeout=function(callback,delay){assert.equal(this,globalThis,'Safari requires a Window timer receiver');timers.push({callback,delay});return timers.length;};
   globalThis.clearTimeout=function(id){assert.equal(this,globalThis);timers[id-1].cancelled=true;};
   try{
     const captured=[];
-    overview=new SnapshotOverview({capture:async computer=>computer.id,onSnapshot:(computer,blob)=>captured.push(blob),onError:error=>{throw error;}});
+    overview=new SnapshotOverview({now:()=>time,capture:async computer=>computer.id,onSnapshot:(computer,blob)=>captured.push(blob),onError:error=>{throw error;}});
     overview.start([{id:'first'},{id:'second'}]);await tick();assert.deepEqual(captured,['first']);
-    assert.equal(timers[0].delay,750);timers[0].callback();await tick();assert.deepEqual(captured,['first','second']);
-    overview.stop();assert.ok(timers[1].cancelled);
+    assert.equal(timers.at(-1).delay,300);time=300;timers.at(-1).callback();await tick();assert.deepEqual(captured,['first','second']);
+    overview.stop();assert.ok(timers.at(-1).cancelled);
   }finally{globalThis.setTimeout=originalSet;globalThis.clearTimeout=originalClear;}
 });
 
-test('snapshots are sequential, staggered after failures, and cancelled on navigation',async()=>{
-  const pending=[],pictures=[],errors=[],timers=[];let active=0,peak=0,time=0;
-  const overview=new SnapshotOverview({interval:10000,stagger:750,now:()=>time,
-    schedule:(callback,delay)=>{timers.push({callback,delay});return timers.length;},unschedule:id=>{timers[id-1].cancelled=true;},
+test('pool starts 300ms apart, caps captures at three, and lets fast PCs pass a slow PC',async()=>{
+  const clock=fakeClock(),pending=[],pictures=[],errors=[];let active=0,peak=0;
+  const overview=new SnapshotOverview({...clock,
     capture:(computer,signal)=>new Promise((resolve,reject)=>{active++;peak=Math.max(peak,active);pending.push({computer,signal,resolve:value=>{active--;resolve(value);},reject:error=>{active--;reject(error);}});}),
     onSnapshot:(computer,blob)=>pictures.push([computer.id,blob]),onError:(computer,error)=>errors.push(computer.id),
   });
-  overview.start([{id:0},{id:1},{id:2}]);
-  assert.equal(pending.length,1);assert.equal(timers.length,0);
-  pending[0].resolve('picture-0');await tick();assert.equal(pending.length,1);assert.equal(timers[0].delay,750);
-  timers[0].callback();await tick();assert.equal(pending.length,2);
-  pending[1].reject(new Error('offline'));await tick();assert.equal(pending.length,2);assert.equal(timers[1].delay,750);
-  timers[1].callback();await tick();assert.equal(pending.length,3);
-  time=15000;pending[2].resolve('picture-2');await tick();
-  assert.equal(peak,1);assert.equal(pictures.length,2);assert.deepEqual(errors,[1]);
-  assert.equal(timers[2].delay,750,'slow rounds retain a pause before starting again');
-  timers[2].callback();assert.equal(pending.length,4);
-  overview.stop();assert.ok(pending[3].signal.aborted);
-  pending[3].resolve('late');await tick();assert.equal(pictures.length,2);assert.equal(timers.length,3);
-  overview.start([{id:4},{id:5}]);pending[4].resolve('new');await tick();
-  const gap=timers[3];overview.stop();assert.ok(gap.cancelled);await tick();assert.equal(pending.length,5,'stopping during a gap prevents the next capture');
+  overview.start(Array.from({length:6},(_,id)=>({id})));await tick();assert.equal(pending.length,1);
+  await clock.advance(299);assert.equal(pending.length,1);await clock.advance(1);assert.equal(pending.length,2);
+  await clock.advance(300);assert.equal(pending.length,3);assert.equal(active,3);
+  pending[1].resolve('fast');await tick();await clock.advance(300);assert.equal(pending.length,4,'slow first PC does not block next capture');assert.equal(peak,3);
+  pending[0].resolve('first');pending[2].reject(new Error('offline'));await tick();
+  await clock.advance(300);assert.equal(pending.length,5);await clock.advance(300);assert.equal(pending.length,6);
+  for(const job of pending.slice(3))job.resolve('picture');await tick();assert.equal(pictures.length,5);assert.deepEqual(errors,[2]);
+  await clock.advance(29099);assert.equal(pending.length,6); // First success at 600ms, next due at 30600ms.
+  await clock.advance(1);assert.equal(pending.length,7);assert.equal(pending[6].computer.id,1);
+  overview.stop();assert.ok(pending[6].signal.aborted);assert.equal(clock.timers.size,0);
+  pending[6].resolve('late');await tick();assert.equal(pictures.length,5,'cancelled captures cannot overwrite another classroom');
+  overview.start([{id:'new'},{id:'queued'}]);await tick();overview.stop();
+  pending.at(-1).resolve('cancelled');await clock.advance(1000);assert.equal(pending.length,8);
+});
+
+test('each PC has its own refresh deadline and failures retry only after 60 seconds',async()=>{
+  const clock=fakeClock(),starts=[];
+  const overview=new SnapshotOverview({...clock,capture:async computer=>{starts.push([computer.id,clock.now()]);if(computer.id==='offline')throw new Error('offline');return 'picture';},onSnapshot(){},onError(){}});
+  overview.start([{id:'offline'},{id:'online'}]);await tick();await clock.advance(60300);
+  assert.deepEqual(starts.filter(([id])=>id==='offline'),[['offline',0],['offline',60000]]);
+  assert.deepEqual(starts.filter(([id])=>id==='online'),[['online',300],['online',30300],['online',60300]]);
+  overview.stop();assert.equal(clock.timers.size,0);
+});
+
+test('visible cards get available slots first and hidden cards still load before refreshes',async()=>{
+  const clock=fakeClock(),started=[];
+  const overview=new SnapshotOverview({...clock,priority:computer=>computer.visible?0:1,capture:async computer=>{started.push(computer.id);return 'picture';},onSnapshot(){},onError(){}});
+  overview.start([{id:'below-fold',visible:false},{id:'on-screen',visible:true}]);await tick();assert.deepEqual(started,['on-screen']);
+  await clock.advance(300);assert.deepEqual(started,['on-screen','below-fold']);overview.stop();
 });
 
 test('frame waiting handles first frame, timeout, disconnect and cancellation',async()=>{

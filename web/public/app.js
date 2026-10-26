@@ -1,6 +1,6 @@
 import RFB from './veyon-rfb.js?v=snapshot-frame-20261026';
-import {setupClassroomActions} from './classroom-actions.js?v=snapshot-stagger-20261026';
-import {captureDesktop,SnapshotOverview} from './snapshots.js?v=snapshot-stagger-20261026';
+import {setupClassroomActions} from './classroom-actions.js?v=snapshot-pool-20261026';
+import {captureDesktop,SnapshotOverview} from './snapshots.js?v=snapshot-pool-20261026';
 const appBase = new URL('.', import.meta.url);
 const $ = selector => document.querySelector(selector);
 const icons = {
@@ -28,7 +28,7 @@ const icons = {
 function icon(name) { return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name] || icons.monitor}</svg>`; }
 function hydrateIcons(scope = document) { scope.querySelectorAll('[data-icon]').forEach(el => el.innerHTML = icon(el.dataset.icon)); }
 hydrateIcons();
-const state = { computers: [], room: null, search: '', page: 0, pageSize: 12, monitoring: false, demo: false, ready: false, connections: new Map(), statuses: new Map(), generation: 0, remote: null, overviewRefreshSeconds: 10 };
+const state = { computers: [], room: null, search: '', page: 0, pageSize: 12, monitoring: false, demo: false, ready: false, connections: new Map(), statuses: new Map(), generation: 0, remote: null, overviewRefreshSeconds: 30 };
 let toastTimer, pendingImport, overviewSnapshots;
 const snapshotURLs=new Map();
 const refreshStorageKey=`veyonweb-overview-refresh:${appBase.pathname}`;
@@ -110,7 +110,7 @@ async function makeRFB(computer, target, mode, {signal} = {}) {
   let rfb;
   channel.addEventListener('close', event => { if (rfb && event.reason) rfb.gatewayError = event.reason; });
   try { rfb = new RFB(target, channel, { shared: true }); } catch (error) { channel.close(); throw error; }
-  const connectionTimer=setTimeout(()=>{rfb.gatewayError=`Connection timed out after ${state.connectionTimeoutSeconds??2} seconds.`;rfb.disconnect();},(state.connectionTimeoutSeconds??2)*1000);
+  const connectionTimer=setTimeout(()=>{rfb.gatewayError=`Connection timed out after ${state.previewTimeoutSeconds??10} seconds.`;rfb.disconnect();},(state.previewTimeoutSeconds??10)*1000);
   const connected=()=>clearTimeout(connectionTimer);
   rfb.addEventListener('connect',connected,{once:true});
   rfb.addEventListener('disconnect',()=>{clearTimeout(connectionTimer);rfb.removeEventListener('connect',connected);},{once:true});
@@ -120,16 +120,22 @@ async function makeRFB(computer, target, mode, {signal} = {}) {
   return rfb;
 }
 function updateOverviewHint(){
-  $('#overview-status').textContent=state.monitoring?`Snapshot overview · refresh every ${state.overviewRefreshSeconds}s · Open View or Remote control for live video.`:'Configure Veyon credentials to load desktop pictures automatically.';
+  $('#overview-status').textContent=state.monitoring?`Snapshot overview · each PC refreshes every ${state.overviewRefreshSeconds}s · Open View or Remote control for live video.`:'Configure Veyon credentials to load desktop pictures automatically.';
 }
 function connectOverview(computers) {
   overviewSnapshots?.stop();
   overviewSnapshots=new SnapshotOverview({
     interval:state.overviewRefreshSeconds*1000,
-    stagger:state.overviewStaggerMs??750,
+    stagger:state.overviewStaggerMs??300,
+    concurrency:state.overviewMaxConnections??3,
+    retry:(state.overviewRetrySeconds??60)*1000,
+    priority:computer=>{
+      const card=document.getElementById(`computer-${computer.id}`);if(!card)return 1;
+      const rect=card.getBoundingClientRect();return rect.bottom>0&&rect.top<window.innerHeight?0:1;
+    },
     capture:async(computer,signal)=>{
       if(!snapshotURLs.has(computer.id))setStatus(computer.id,'connecting','Capturing a desktop picture…');
-      if(!state.demo)return captureDesktop(computer,makeRFB,{signal,timeout:(state.connectionTimeoutSeconds??2)*1000});
+      if(!state.demo)return captureDesktop(computer,makeRFB,{signal,timeout:(state.previewTimeoutSeconds??10)*1000});
       const staging=document.createElement('div');staging.className='screenshot-staging';document.body.append(staging);
       const demo=demoScreen(staging,computer,false);
       try{return await new Promise((resolve,reject)=>staging.querySelector('canvas').toBlob(blob=>blob?resolve(blob):reject(new Error('Sample snapshot unavailable.')),'image/png'));}
@@ -149,9 +155,12 @@ function connectOverview(computers) {
 }
 async function loadClassroom() {
   const data = await api('/api/computers'); Object.assign(state,{ computers:data.computers, ready:data.ready, demo:data.demo, maxUploadBytes:data.maxUploadBytes });
-  state.overviewRefreshSeconds=data.overviewRefreshSeconds||10;
-  state.overviewStaggerMs=data.overviewStaggerMs??750;
+  state.overviewRefreshSeconds=data.overviewRefreshSeconds||30;
+  state.overviewStaggerMs=data.overviewStaggerMs??300;
   state.connectionTimeoutSeconds=data.connectionTimeoutSeconds??2;
+  state.previewTimeoutSeconds=data.previewTimeoutSeconds??10;
+  state.overviewMaxConnections=data.overviewMaxConnections??3;
+  state.overviewRetrySeconds=data.overviewRetrySeconds??60;
   try{const saved=Number(localStorage.getItem(refreshStorageKey));if(Number.isInteger(saved)&&saved>=2&&saved<=3600)state.overviewRefreshSeconds=saved;}catch{}
   $('#overview-refresh').value=state.overviewRefreshSeconds;
   $('#demo-banner').hidden = !state.demo; $('#network-label').textContent = state.demo ? 'Sample workspace' : 'Local gateway';

@@ -29,7 +29,7 @@ for(const method of ['key','logon'])test(`${apache?'Apache/PHP-FPM':'PHP HTTP'} 
   try{
     await writeFile(path.join(dir,'key.pem'),privateKey,{mode:0o600});
     const hash=spawnSync('php',['-r',"echo password_hash('integration-password', PASSWORD_DEFAULT);"],{encoding:'utf8'}).stdout;
-    const config={origin,teacher_username:'teacher',teacher_password_hash:hash,database:path.join(dir,'data.sqlite'),gateway_listen:`websocket://127.0.0.1:${wsPort}`,websocket_url:apache?'/remote':`ws://127.0.0.1:${wsPort}/remote`,veyon:{method,username:'teacher',key_name:'teacher',private_key_file:path.join(dir,'key.pem'),password:'secret-password'}};
+    const config={origin,preview_timeout_seconds:3,teacher_username:'teacher',teacher_password_hash:hash,database:path.join(dir,'data.sqlite'),gateway_listen:`websocket://127.0.0.1:${wsPort}`,websocket_url:apache?'/remote':`ws://127.0.0.1:${wsPort}/remote`,veyon:{method,username:'teacher',key_name:'teacher',private_key_file:path.join(dir,'key.pem'),password:'secret-password'}};
     const configPath=path.join(dir,'config.php');await writeFile(configPath,`<?php return json_decode(base64_decode('${Buffer.from(JSON.stringify(config)).toString('base64')}'), true);`);
     const commands=apache?[]:[['php','-S',`127.0.0.1:${httpPort}`,'-t','public','router.php']];
     if(apache){
@@ -86,11 +86,11 @@ for(const method of ['key','logon'])test(`${apache?'Apache/PHP-FPM':'PHP HTTP'} 
     assert.deepEqual(Buffer.concat(fileFrames.slice(1,-1).map(f=>f[2]['2'])),fileBytes);
     assert.deepEqual(fileFrames.at(-1)[2],{'0':transferId,'1':'lesson.txt','3':true});input.length=0;
     const actionStarted=Date.now(),timedOut=await request('/api/actions','POST',{computerId:'slow',action:'lock'});
-    assert.equal(timedOut.status,502);assert.ok(Date.now()-actionStarted<5000,'HTTP action connection deadline');
+    assert.equal(timedOut.status,502);assert.ok(Date.now()-actionStarted>=2500,'TCP accepted; authentication uses its separate 3-second budget');assert.ok(Date.now()-actionStarted<5000,'HTTP action connection deadline');
     const slowTicket=await (await request('/api/tickets','POST',{computerId:'slow',mode:'view'})).json();
     const slowSocket=new WebSocket(new URL(slowTicket.path,origin.replace('http','ws')),{headers:{Origin:origin,Cookie:cookie}});sockets.push(slowSocket);slowSocket.on('error',()=>{});
     const gatewayStarted=Date.now(),[closeCode,closeReason]=await once(slowSocket,'close');
-    assert.equal(closeCode,1011);assert.match(closeReason.toString(),/timed out/i);assert.ok(Date.now()-gatewayStarted<5000,'Gateway connection deadline');
+    assert.equal(closeCode,1011);assert.match(closeReason.toString(),/timed out/i);assert.ok(Date.now()-gatewayStarted>=2500,'Gateway separates TCP connection and authentication budgets');assert.ok(Date.now()-gatewayStarted<5000,'Gateway connection deadline');
     const readonly=await open('view'),key=Buffer.from([4,1,0,0,0,0,0,65]),pointer=Buffer.from([5,1,0,10,0,20]),update=Buffer.from([3,0,0,0,0,0,0,2,0,2]);
     readonly.ws.send(Buffer.concat([key,pointer,update]));await delay(80);assert.deepEqual(Buffer.concat(input),update);input.length=0;
     const frame=Buffer.alloc(32);frame.writeUInt16BE(1,2);frame.writeUInt16BE(2,8);frame.writeUInt16BE(2,10);frame.fill(255,16);fake.sendFrame(frame);assert.deepEqual(await readonly.next(),frame);

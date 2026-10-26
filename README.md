@@ -4,11 +4,24 @@ A web dashboard for viewing and remotely controlling Veyon classroom computers.
 
 Classroom actions include screenshots, text messages, screen lock/unlock, opening websites, running programs, Wake-on-LAN, restart/shutdown/logoff, and file distribution. Select individual cards or use **Select classroom / filtered list**, then **Actions for selected PCs**. Selection spans pages within the current classroom/search. Changing the filter removes selections outside that filter. Each target gets its own result; **Stop remaining** stops queued targets, while in-flight commands may still finish.
 
-The classroom overview displays still pictures rather than continuous video. Previews start automatically when the classroom loads. Choose **Refresh every … sec** (2–3600 seconds). The default is 10 seconds; set `overview_refresh_seconds` in `web/config/local.php` to change the server default. A teacher's browser override is remembered for that app URL. Each refresh captures a rendered frame through a short-lived view-only gateway connection and disconnects it. Captures run one PC at a time, with a 750 ms pause between connections. Set `overview_stagger_ms` in `web/config/local.php` (0–10000) to tune that pause. Slow rounds finish before another starts, and retain a pause before restarting, so slow PCs may extend the refresh interval. Only the current page is refreshed. Refresh pauses in a hidden tab and while the individual-PC viewer is open. Failed refreshes keep the last successful picture with its timestamp and a failure indicator. Individual **View** and **Remote control** sessions remain full-motion.
+The classroom overview displays still pictures rather than continuous video and starts automatically. It uses a pool of **3** short-lived, view-only gateway connections, starting them **300 ms** apart. A slow PC occupies one slot while the others keep loading. Cards currently on screen get priority, and only the current page is captured. Each successful PC refreshes independently **30 seconds after its last capture**; unavailable PCs retry after **60 seconds**. Old pictures remain visible with timestamps when a refresh fails. Refresh pauses in hidden tabs and during individual-PC viewing. **View** and **Remote control** remain full-motion.
+
+Choose **Refresh every … sec** (2–3600) to override the per-PC refresh interval in this browser. Existing browser overrides are preserved. Configure the server defaults in `web/config/local.php`:
+
+```php
+'overview_refresh_seconds' => 30,
+'overview_max_connections' => 3,  // 1–10 simultaneous captures
+'overview_stagger_ms' => 300,     // 0–10000 between connection starts
+'overview_retry_seconds' => 60,  // 2–3600 for unavailable PCs
+'connection_timeout_seconds' => 2,
+'preview_timeout_seconds' => 10,
+```
+
+Existing explicit configuration values take precedence over these new defaults. Raise or lower the pool size to suit the server; a shorter interval does not force simultaneous refreshes.
 
 ## Requirements
 
-Connection attempts default to **2 seconds**. Set `'connection_timeout_seconds' => 2` in `web/config/local.php` to change this deadline (whole seconds, 1–120). It covers gateway desktop handshakes and classroom-action connection/authentication. Overview and screenshot captures also bound the ticket request and first rendered frame by that deadline, so a stalled PC does not hold up the queue. Increase it for slow PCs or networks. Established remote sessions and subsequent file transfers do not have a two-second lifetime. Restart `veyon-gateway` after changing it, then reload the webpage to pick up the new value.
+`connection_timeout_seconds` is the **gateway-to-PC TCP connection timeout**, default 2 seconds (1–120). Once TCP connects, authentication has the separate `preview_timeout_seconds` budget, default 10 seconds (1–120). The browser also uses this longer budget for WebSocket setup, ticket acquisition and the first rendered picture, allowing time for external reverse proxies. Established remote sessions and subsequent file transfers do not expire after either connection deadline. Restart `veyon-gateway` after changing the timeouts, then reload the webpage.
 
 - Linux/Unix server with PHP 8.2+, Composer, and the OpenSSL, PDO SQLite, iconv, PCNTL and POSIX extensions.
 - Apache 2.4.47+ with HTTPS and the `ssl`, `rewrite`, `headers`, `proxy` and `proxy_http` modules, plus mod_php.

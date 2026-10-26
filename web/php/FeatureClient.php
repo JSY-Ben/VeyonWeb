@@ -8,12 +8,13 @@ final class FeatureClient
     private $socket;
     private string $buffer = '';
     private float $deadline;
-    public function __construct(array $target, array $credentials, int $connectionTimeout = 2)
+    public function __construct(array $target, array $credentials, int $connectionTimeout = 2, int $handshakeTimeout = 10)
     {
         $this->deadline = microtime(true) + $connectionTimeout;
         $host = str_contains($target['host'], ':') ? '[' . $target['host'] . ']' : $target['host'];
         $this->socket = @stream_socket_client('tcp://' . $host . ':' . $target['port'], $errno, $error, $connectionTimeout);
         if (!$this->socket) throw new \RuntimeException('Cannot reach Veyon. Check the address, port and firewall.');
+        $this->deadline = microtime(true) + $handshakeTimeout;
         stream_set_timeout($this->socket, 5);
         try {
             $ready = false;
@@ -36,7 +37,7 @@ final class FeatureClient
     {
         $remaining = $this->deadline - microtime(true);
         if ($remaining <= 0) throw new \RuntimeException('Veyon command timed out.');
-        $wait = min(5, $remaining);
+        $wait = $remaining;
         stream_set_timeout($this->socket, (int)$wait, (int)(($wait - (int)$wait) * 1000000));
         $data = fread($this->socket, 8192);
         if ($data === false || $data === '') throw new \RuntimeException('Veyon disconnected or timed out. Check credentials and access-control rules.');

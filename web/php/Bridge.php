@@ -17,7 +17,7 @@ final class Bridge
     private bool $authenticated = false;
     private bool $closed = false;
     private int $timer;
-    public function __construct(private TcpConnection $browser, array $target, array $credentials, int $connectionTimeout = 2)
+    public function __construct(private TcpConnection $browser, array $target, array $credentials, int $connectionTimeout = 2, int $handshakeTimeout = 10)
     {
         $this->filter = new RfbFilter($target['mode'] === 'view');
         $host = str_contains($target['host'],':') ? '[' . $target['host'] . ']' : $target['host'];
@@ -42,6 +42,10 @@ final class Bridge
         $this->browser->onBufferFull = function (): void { if ($this->browser->getSendBufferQueueSize() > 4194304) $this->fail('Screen connection is too slow.'); else $this->upstream->pauseRecv(); };
         $this->browser->onBufferDrain = function (): void { if ($this->state === 'running') $this->upstream->resumeRecv(); };
         $this->timer = Timer::add($connectionTimeout,fn() => $this->fail('Remote handshake timed out.'),[],false);
+        $this->upstream->onConnect = function () use ($handshakeTimeout): void {
+            Timer::del($this->timer);
+            $this->timer = Timer::add($handshakeTimeout,fn() => $this->fail('Remote handshake timed out.'),[],false);
+        };
         $this->upstream->connect();
     }
     public function receive(string $bytes): void

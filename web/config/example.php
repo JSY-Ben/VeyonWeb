@@ -14,10 +14,14 @@ return [
     'gateway_listen' => 'websocket://127.0.0.1:9001',
     'websocket_url' => '/remote',
     // Default overview snapshot interval; teachers can override it in the browser.
-    'overview_refresh_seconds' => 10,
-    // Preview connections run one at a time, with this pause between PCs.
-    'overview_stagger_ms' => 750,
-    // Connection/handshake deadline; increase for slow PCs or networks.
+    'overview_refresh_seconds' => 30,
+    // Space connection starts while allowing a small pool of captures.
+    'overview_stagger_ms' => 300,
+    'overview_max_connections' => 3,
+    'overview_retry_seconds' => 60,
+    // Allow public proxies, Veyon authentication and the first picture time to load.
+    'preview_timeout_seconds' => 10,
+    // Gateway-to-PC TCP connection deadline; independent of the preview budget.
     'connection_timeout_seconds' => 2,
     // Wake-on-LAN is sent by the web server; use your subnet broadcast if needed.
     'wake_broadcast' => '255.255.255.255',
