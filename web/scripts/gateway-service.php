@@ -1,15 +1,20 @@
 <?php
 declare(strict_types=1);
 
-function systemdValue(string $value): string
+function systemdValue(string $value, bool $command = false): string
 {
     if (preg_match('/[\x00-\x1f\x7f]/', $value)) throw new RuntimeException('Service paths cannot contain control characters.');
-    return '"' . str_replace(['\\', '"', '%', '$'], ['\\\\', '\\"', '%%', '$$'], $value) . '"';
+    $value = str_replace(['\\', '"', '%'], ['\\\\', '\\"', '%%'], $value);
+    if ($command) $value = str_replace('$', '$$', $value);
+    return '"' . $value . '"';
 }
 
 function gatewayService(string $webDirectory, string $dataDirectory, string $account): string
 {
     if (!preg_match('/^[a-z_][a-z0-9_-]*[$]?$/i', $account)) throw new RuntimeException('Invalid service account.');
+    // WorkingDirectory is a single literal path, not a quoted word list.
+    systemdValue($webDirectory); // Validate control characters.
+    if (!str_starts_with($webDirectory, '/') || !str_starts_with($dataDirectory, '/')) throw new RuntimeException('Service directories must be absolute paths.');
     $template = file_get_contents(__DIR__ . '/../deploy/veyon-gateway.service');
     if ($template === false) throw new RuntimeException('Cannot read service template.');
     return str_replace([
@@ -19,8 +24,8 @@ function gatewayService(string $webDirectory, string $dataDirectory, string $acc
         'ReadWritePaths=/var/www/html/VeyonWeb/web/data',
     ], [
         'User=' . $account, 'Group=' . $account,
-        'WorkingDirectory=' . systemdValue($webDirectory),
-        'ExecStart=' . systemdValue(PHP_BINARY) . ' ' . systemdValue($webDirectory . '/gateway.php') . ' start',
+        'WorkingDirectory=' . str_replace('%', '%%', $webDirectory),
+        'ExecStart=' . systemdValue(PHP_BINARY, true) . ' ' . systemdValue($webDirectory . '/gateway.php', true) . ' start',
         "ReadWritePaths=\nReadWritePaths=" . systemdValue($dataDirectory),
     ], $template);
 }
