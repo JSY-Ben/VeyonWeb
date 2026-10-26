@@ -88,6 +88,25 @@ The commands below assume Debian/Ubuntu, mod_php, systemd and an installation at
 6. Open your HTTPS site and sign in. Add computers using their hostname/IP and Veyon port, and their previews refresh automatically. Choose **View** for a live read-only session or **Remote control** for keyboard and mouse access.
 
 Restart the gateway after changing its configuration: `sudo systemctl restart veyon-gateway`.
+
+The gateway starts **4 persistent worker processes** by default. Each worker
+handles multiple connections asynchronously and opens its own SQLite connection
+after it starts. Configure `'gateway_workers' => 4` in `web/config/local.php`
+(integer 1–16), then restart `veyon-gateway` to apply it. Set it to 1 to compare
+against the previous single-worker behaviour. This setting is not exposed in the
+web Settings dialog.
+
+Connection quotas are conservatively divided between workers: with four workers,
+each permits 32 connections total and 16 per signed-in session. Aggregate limits
+remain at most 128 and 64 respectively; uneven distribution may cause rejection
+before those aggregate limits are reached. Extra workers isolate delays in one
+process but do not fix DNS failures, unreachable PCs or firewall restrictions.
+
+To deploy this change, copy `web/gateway.php` and `web/php/Config.php` together,
+then run `sudo systemctl restart veyon-gateway`. Check
+`sudo systemctl status veyon-gateway` and the gateway log for four `Veyon-PHP`
+workers. Test a classroom and an individual View connection, ideally with a known
+PC IP address, and compare against `gateway_workers` set to 1.
 If you change `data_directory` later, rerun setup to regenerate the service, or update its `ReadWritePaths` manually and reload systemd before restarting.
 
 ## Maintenance

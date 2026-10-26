@@ -15,7 +15,7 @@ final class Config
             'origin' => 'http://127.0.0.1:8080', 'masteradmin_username' => 'admin', 'masteradmin_password_hash' => '',
             'app_name'=>'VeyonWeb', 'primary_colour'=>'#215c48', 'theme'=>'light', 'app_logo'=>'', 'login_graphic'=>'',
             'base_path' => null, 'data_directory' => dirname(__DIR__) . '/data',
-            'gateway_listen' => 'websocket://127.0.0.1:9001', 'websocket_url' => '/remote',
+            'gateway_listen' => 'websocket://127.0.0.1:9001', 'gateway_workers' => 4, 'websocket_url' => '/remote',
             'overview_refresh_seconds' => 30,
             'overview_stagger_ms' => 300,
             'overview_max_connections' => 3, 'overview_retry_seconds' => 60, 'preview_timeout_seconds' => 10,
@@ -23,7 +23,7 @@ final class Config
             'wake_broadcast' => '255.255.255.255', 'max_upload_bytes' => 20971520,
             'demo' => false, 'veyon' => ['method' => 'key', 'username' => 'teacher', 'key_name' => 'teacher', 'private_key_file' => '', 'password' => ''],
         ], $values);
-        foreach (['overview_max_connections'=>[1,10], 'overview_retry_seconds'=>[2,3600], 'preview_timeout_seconds'=>[1,120]] as $key=>$range) {
+        foreach (['gateway_workers'=>[1,16], 'overview_max_connections'=>[1,10], 'overview_retry_seconds'=>[2,3600], 'preview_timeout_seconds'=>[1,120]] as $key=>$range) {
             if (!is_int($config[$key]) || $config[$key]<$range[0] || $config[$key]>$range[1]) throw new \RuntimeException($key . ' must be an integer between ' . $range[0] . ' and ' . $range[1] . '.');
         }
         if (!is_int($config['connection_timeout_seconds']) || $config['connection_timeout_seconds'] < 1 || $config['connection_timeout_seconds'] > 120) throw new \RuntimeException('connection_timeout_seconds must be an integer between 1 and 120.');

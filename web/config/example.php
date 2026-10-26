@@ -19,6 +19,7 @@ return [
     // Create it with www-data ownership and match the service's ReadWritePaths.
     'data_directory' => dirname(__DIR__) . '/data',
     'gateway_listen' => 'websocket://127.0.0.1:9001',
+    'gateway_workers' => 4, // 1–16 persistent processes; restart the gateway after changing
     'websocket_url' => '/remote',
     // Default overview snapshot interval; teachers can override it in the browser.
     'overview_refresh_seconds' => 30,

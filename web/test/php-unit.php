@@ -15,6 +15,27 @@ function same(mixed $actual,mixed $expected): void { check($actual === $expected
 function rejects(callable $function): void { try { $function(); } catch (Throwable) { return; } throw new RuntimeException('Expected an exception.'); }
 function runTest(string $name,callable $function): void { global $passed; $function(); $passed++; echo "PASS $name\n"; }
 
+runTest('Gateway worker configuration defaults and rejects unsafe counts',function (): void {
+    $previous = getenv('CLASSROOM_CONFIG');
+    $path = tempnam(sys_get_temp_dir(), 'veyon-config-');
+    putenv('CLASSROOM_CONFIG=' . $path);
+    try {
+        file_put_contents($path, '<?php return [];');
+        same(\Classroom\Config::load()['gateway_workers'], 4);
+        foreach ([1,4,16] as $count) {
+            file_put_contents($path, '<?php return ' . var_export(['gateway_workers'=>$count],true) . ';');
+            same(\Classroom\Config::load()['gateway_workers'], $count);
+        }
+        foreach ([0,17,'4',4.5,null] as $count) {
+            file_put_contents($path, '<?php return ' . var_export(['gateway_workers'=>$count],true) . ';');
+            rejects(fn() => \Classroom\Config::load());
+        }
+    } finally {
+        unlink($path);
+        putenv($previous === false ? 'CLASSROOM_CONFIG' : 'CLASSROOM_CONFIG=' . $previous);
+    }
+});
+
 runTest('Qt wire fixtures and Unicode',function (): void {
     same(bin2hex(Wire::variant(3)),'000000020000000003');
     same(bin2hex(Wire::variant('A')),'0000000a00000000020041');

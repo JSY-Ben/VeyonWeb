@@ -98,7 +98,10 @@ for(const method of ['key','logon'])test(`${apache?'Apache/PHP-FPM':'PHP HTTP'} 
     const control=await open('control');control.ws.send(Buffer.concat([key,pointer]));await delay(80);assert.deepEqual(Buffer.concat(input),Buffer.concat([key,pointer]));
     const revoked=Promise.all([once(readonly.ws,'close'),once(control.ws,'close')]);
     assert.equal((await request('/api/computers','PUT',[{id:'lab',name:'Lab updated',host:'127.0.0.1',port:fake.port,room:'Lab'}])).status,200);await revoked;
-    const final=await open('control'),closed=once(final.ws,'close');assert.equal((await request('/api/logout','POST',{})).status,200);await closed;
+    // Exercise concurrent ticket consumption and bridges with the default
+    // four-worker pool, then verify revocation reaches every connection.
+    const concurrent=await Promise.all(Array.from({length:8},()=>open('view')));
+    const final=await open('control'),closed=Promise.all([final,...concurrent].map(connection=>once(connection.ws,'close')));assert.equal((await request('/api/logout','POST',{})).status,200);await closed;
     assert.equal((await request('/api/computers')).status,401);assert.deepEqual(fake.errors,[]);
     assert.equal((await request('/api/actions','POST',{computerId:'lab',action:'lock'})).status,401);
     assert.doesNotMatch(logs, /Fatal error|Warning:|Deprecated:/);

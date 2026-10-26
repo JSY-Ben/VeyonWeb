@@ -15,7 +15,12 @@ Worker::$pidFile = dirname($config['database']) . '/gateway.pid';
 Worker::$logFile = dirname($config['database']) . '/gateway.log';
 TcpConnection::$defaultMaxPackageSize = 1048576;
 $worker = new Worker($config['gateway_listen']);
-$worker->name = 'Veyon-PHP'; $worker->count = 1;
+$worker->name = 'Veyon-PHP'; $worker->count = $config['gateway_workers'];
+// Divide the existing limits between persistent workers. Conservative local
+// quotas keep aggregate capacity at or below the original limits without a
+// shared lock in the connection path. A busy worker can reject before others.
+$connectionLimit = intdiv(128, $worker->count);
+$sessionLimit = intdiv(64, $worker->count);
 $bridges = []; $authorizations = []; $db = null;
 $worker->onWorkerStart = function () use (&$db,$config,&$bridges,&$authorizations,$worker): void {
     $db = new Database($config['database']);
@@ -30,17 +35,17 @@ $worker->onWorkerStart = function () use (&$db,$config,&$bridges,&$authorization
         } catch (\Throwable $error) { error_log('Veyon gateway session check failed.'); foreach ($bridges as $bridge) $bridge->fail('Session validation unavailable.'); }
     });
 };
-$worker->onWebSocketConnect = function (TcpConnection $connection,Request $request) use (&$db,$config,&$authorizations): void {
+$worker->onWebSocketConnect = function (TcpConnection $connection,Request $request) use (&$db,$config,&$authorizations,$connectionLimit,$sessionLimit): void {
     try {
         if ($request->path() !== '/remote') throw new \RuntimeException('Proxy path mismatch: forward the WebSocket request to /remote.');
         if ($request->header('origin') !== $config['origin']) throw new \RuntimeException('Origin mismatch: check origin in config/local.php and restart the gateway.');
-        if (count($authorizations) >= 128) throw new \RuntimeException('Gateway connection limit reached.');
+        if (count($authorizations) >= $connectionLimit) throw new \RuntimeException('Gateway worker connection limit reached.');
         $ticket = $request->get('ticket',''); $cookie = $request->cookie('classroom','');
         if (!is_string($ticket) || !preg_match('/^[a-f0-9]{64}$/D', $ticket)) throw new \RuntimeException('Missing or malformed connection ticket.');
         if (!is_string($cookie) || !preg_match('/^[a-f0-9]{64}$/D', $cookie)) throw new \RuntimeException('Missing or malformed classroom cookie: sign out and sign in again; check cookie path and proxy cookie forwarding.');
         $auth = $db->consumeTicket($ticket,$cookie);
         if (!$auth) throw new \RuntimeException('Session or ticket invalid: check that the website and gateway use the same database; tickets expire after 30 seconds and can only be used once.');
-        if (count(array_filter($authorizations,fn($a) => $a['session_id'] === $auth['session_id'])) >= 64) throw new \RuntimeException('Too many sessions.');
+        if (count(array_filter($authorizations,fn($a) => $a['session_id'] === $auth['session_id'])) >= $sessionLimit) throw new \RuntimeException('Too many sessions on this gateway worker.');
         $connection->websocketType = Websocket::BINARY_TYPE_ARRAYBUFFER;
         $authorizations[$connection->id] = $auth;
     } catch (\Throwable $error) {
