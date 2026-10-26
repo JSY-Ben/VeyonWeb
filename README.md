@@ -1,37 +1,25 @@
 # VeyonWeb
 
-A web dashboard for viewing and remotely controlling Veyon classroom computers.
+Welcome to VeyonWeb! A PHP Web Dashboard for viewing and remotely controlling Veyon classroom computers!
 
-Classroom actions include screenshots, text messages, screen lock/unlock, opening websites, running programs, Wake-on-LAN, restart/shutdown/logoff, and file distribution. Select individual cards or use **Select classroom / filtered list**, then **Actions for selected PCs**. Selection spans pages within the current classroom/search. Changing the filter removes selections outside that filter. Each target gets its own result; **Stop remaining** stops queued targets, while in-flight commands may still finish.
+Once installed, you can add any computer with a Veyon installation onto the dashboard, group them into particular classroms, create users who can login to the dashboard and give them appropriate permissions to specific features and groups. 
 
-The classroom overview displays still pictures rather than continuous video and starts automatically. It uses a pool of **3** short-lived, view-only gateway connections, starting them **300 ms** apart. A slow PC occupies one slot while the others keep loading. Cards currently on screen get priority, and only the current page is captured. Each successful PC refreshes independently **30 seconds after its last capture**; unavailable PCs retry after **60 seconds**. Old pictures remain visible with timestamps when a refresh fails. Refresh pauses in hidden tabs and during individual-PC viewing. **View** and **Remote control** remain full-motion.
-
-Choose **Refresh every … sec** (2–3600) to override the per-PC refresh interval in this browser. Existing browser overrides are preserved. Configure the server defaults in `web/config/local.php`:
-
-```php
-'overview_refresh_seconds' => 30,
-'overview_max_connections' => 3,  // 1–10 simultaneous captures
-'overview_stagger_ms' => 300,     // 0–10000 between connection starts
-'overview_retry_seconds' => 60,  // 2–3600 for unavailable PCs
-'connection_timeout_seconds' => 2,
-'preview_timeout_seconds' => 10,
-```
-
-Existing explicit configuration values take precedence over these new defaults. Raise or lower the pool size to suit the server; a shorter interval does not force simultaneous refreshes.
+Supported Veyon features include screenshots, text messages, screen lock/unlock, opening websites, running programs, Wake-on-LAN, restart/shutdown/logoff, and file distribution.
 
 ## Requirements
 
-`connection_timeout_seconds` is the **gateway-to-PC TCP connection timeout**, default 2 seconds (1–120). Once TCP connects, authentication has the separate `preview_timeout_seconds` budget, default 10 seconds (1–120). The browser uses this longer budget for ticket acquisition and WebSocket setup, then starts a separate budget of the same length after connection for the first rendered picture. An initial preview timeout gets one retry after 2 seconds; repeated failures use the configured retry interval. This allows cold connections and initial screen capture to complete without opening a live view. Established remote sessions and subsequent file transfers do not expire after either connection deadline. Restart `veyon-gateway` after changing the timeouts, then reload the webpage.
-
-- Linux/Unix server with PHP 8.2+, Composer, and the OpenSSL, PDO SQLite, iconv, PCNTL and POSIX extensions.
+- Linux server with PHP 8.3+, Composer, and the OpenSSL, PDO SQLite, iconv, PCNTL and POSIX PHP extensions.
 - Apache 2.4.47+ with HTTPS and the `ssl`, `rewrite`, `headers`, `proxy` and `proxy_http` modules, plus mod_php.
-- Network access to PCs running Veyon Server, normally on TCP port 11100, with Veyon authentication and access-control rules configured.
+- Network access to PCs running Veyon, normally on TCP port 11100, with Veyon authentication and access-control rules configured. Either password or key authentication is supported. 
+- Access to your server's 'systemd', so the background gateway process that connects to Veyon instances on your network can run. 
+- Keep any configuration, private keys and data outside the publicly accessible `public` folder. 
+- While this may very well work on Windows or Mac based Web servers, it so far hasn't been tested. 
 
-## Install and run on Apache
+## Install and run on Linux/Apache
 
-The commands below assume Debian/Ubuntu, mod_php, systemd and an installation at `/var/www/html/VeyonWeb`. Adjust paths, the PHP version and service account for your server.
+The commands below are based on an Debian/Ubuntu installation, with Apache Web server using mod_php
 
-1. Copy the project to `/var/www/html/VeyonWeb`, then install dependencies and create the dashboard login:
+1. Copy the project to your new site's root. For this example, we will use `/var/www/html/VeyonWeb`, then install dependencies and run the setup PHP script in Terminal as below:
 
    ```sh
    cd /var/www/html/VeyonWeb/web
@@ -39,143 +27,32 @@ The commands below assume Debian/Ubuntu, mod_php, systemd and an installation at
    php scripts/setup.php
    ```
 
-   Enter an administrator username, password and HTTPS site origin, such as `https://classroom.school.example`, without a trailing slash. Setup creates or updates that account as an administrator in the database.
+2. Answer the questions asked in the setup prompts. It will ask for a Master Administrator username, password and HTTPS site origin, such as `https://classroom.school.example`, without a trailing slash. Setup will then create your config file in the config folder of the installation, called `local.php`. Future users will be setup in the app itself, and saved in a local SQLite database. 
 
-   On Linux, setup also prompts for the data directory and offers to install the systemd gateway service using `sudo`. Accept to create the directory with the chosen service account's ownership, generate the service with your installation and data paths, install it, reload systemd, enable it and restart it. The default service user and group are `www-data`. This replaces `/etc/systemd/system/veyon-gateway.service`; review any existing systemd overrides if they set paths. Existing classroom data is not moved automatically. If you accept this step, directory creation in step 3 and manual service installation in step 5 are already handled.
-
-2. Edit `web/config/local.php`. In the `veyon` section, set your teacher username, key name and private-key path. Install the matching public key on the classroom PCs. For logon authentication, set `method` to `logon` and provide the Veyon username and password.
-
-3. Set `data_directory` in `web/config/local.php` to an absolute path for the database, gateway log and PID file. Setup prompts for this location; the default is `/var/www/html/VeyonWeb/web/data`. Create it before starting the service:
-
-   ```sh
-   sudo install -d -o www-data -g www-data -m 0750 /var/www/html/VeyonWeb/web/data
-   ```
-
-   Substitute your chosen directory. Give the PHP web process and gateway service account read access to the configuration and private key, and write access to that directory. Keep credentials private. The supplied service uses `www-data`. Existing configurations with a `database` entry continue using that file; remove that entry to use `data_directory` for the database. Move existing data while the services are stopped if changing its location.
-
-4. Enable Apache's modules and copy the virtual host configuration:
-
-   ```sh
-   sudo a2enmod ssl rewrite headers proxy proxy_http
-   sudo cp /var/www/html/VeyonWeb/web/apache-vhost.conf.example /etc/apache2/sites-available/veyonweb.conf
-   sudoedit /etc/apache2/sites-available/veyonweb.conf
-   ```
-
-   Ensure mod_php is installed and enabled. Set your hostname and TLS certificate paths. Use a dedicated hostname with DocumentRoot **`/var/www/html/VeyonWeb/web/public`**. In `web/config/local.php`, keep `origin` equal to your HTTPS site origin and `websocket_url` set to `/remote`.
-
-   Enable the site and check the configuration before restarting Apache:
-
-   ```sh
-   sudo a2ensite veyonweb.conf
-   sudo apachectl configtest
-   sudo systemctl restart apache2
-   ```
-
-5. Install the PHP gateway service required for remote sessions:
-
-   ```sh
-   sudo cp /var/www/html/VeyonWeb/web/deploy/veyon-gateway.service /etc/systemd/system/
-   ```
-
-   The [supplied service](web/deploy/veyon-gateway.service) uses `/var/www/html/VeyonWeb` and `www-data`. Adjust these if needed. Set `ReadWritePaths` in the installed service to your `data_directory` (or the parent directory of an explicit `database` file). systemd cannot read the PHP configuration, so both locations must match. Then start it:
-
-   ```sh
-   sudo systemctl daemon-reload
-   sudo systemctl enable --now veyon-gateway
-   sudo systemctl status veyon-gateway
-   ```
-
-6. Open your HTTPS site and sign in. Add computers using their hostname/IP and Veyon port, and their previews refresh automatically. Choose **View** for a live read-only session or **Remote control** for keyboard and mouse access.
-
-Restart the gateway after changing its configuration: `sudo systemctl restart veyon-gateway`.
-
-The gateway starts **4 persistent worker processes** by default. Each worker
-handles multiple connections asynchronously and opens its own SQLite connection
-after it starts. Configure `'gateway_workers' => 4` in `web/config/local.php`
-(integer 1–16), or use **Settings → Connections → Gateway processes**. Save,
-then restart `veyon-gateway` on the server to apply the process count. Set it to
-1 to compare against the previous single-worker behaviour.
-
-Connection quotas are conservatively divided between workers: with four workers,
-each permits 32 connections total and 16 per signed-in session. Aggregate limits
-remain at most 128 and 64 respectively; uneven distribution may cause rejection
-before those aggregate limits are reached. Extra workers isolate delays in one
-process but do not fix DNS failures, unreachable PCs or firewall restrictions.
-
-To deploy this change, copy `web/gateway.php` and `web/php/Config.php` together,
-then run `sudo systemctl restart veyon-gateway`. Check
-`sudo systemctl status veyon-gateway` and the gateway log for four `Veyon-PHP`
-workers. Test a classroom and an individual View connection, ideally with a known
-PC IP address, and compare against `gateway_workers` set to 1.
-If you change `data_directory` later, rerun setup to regenerate the service, or update its `ReadWritePaths` manually and reload systemd before restarting.
-
-## Maintenance
-
-### Users, roles and web settings
-
-The permanent **master administrator** is stored in `config/local.php` as `masteradmin_username` and `masteradmin_password_hash`. It always has full access and remains available independently of database users. Run `php scripts/setup.php` to create or reset this backup account. Additional admins, supervisors and teachers are managed in Settings and stored in SQLite. The master account cannot be edited or deleted through Settings; its username is reserved. Changing its config credentials invalidates its existing sessions. Rename the previous top-level `teacher_username` and `teacher_password_hash` keys to the new names when upgrading (leave the nested Veyon credentials unchanged). No config account is copied into SQLite.
+On Linux, the setup script will also prompt you for a location for the data directory and offers to install the systemd gateway service using `sudo`. The gateway service is a background proess that is always running to allow the web dashboard to connect to your Veyon instances.
+   
+Accept to create the data directory, and install the gateway background service, The default user and group used to own and run these folders and services is `www-data`. 
 
 
-| Role | Classroom access | Allowed actions |
-| --- | --- | --- |
-| Admin | All classrooms | View/control, screenshots, all classroom commands, directory edits/import/export, users and web settings |
-| Supervisor | All classrooms | View/control and screenshots; cannot edit computers/classrooms, manage users/settings or issue classroom commands |
-| Teacher | Only classrooms assigned by an admin | View/control and screenshots in those classrooms; no directory, user, settings or classroom-command changes |
-
-Admins open **Settings** in the sidebar to create accounts, choose roles, assign teacher classrooms, disable/delete users and reset passwords. Usernames are unique without regard to case and cannot be renamed. New passwords require 12–72 bytes. A teacher with no assignments sees no computers. Assignments use the current classroom names: deleting or renaming a classroom removes its old grants, so assign the new classroom explicitly.
-
-Permissions are enforced in the API, ticket consumption and gateway session checks, not just by hiding controls. Changing a user's password, role, enabled status or classroom assignments ends that user's existing sessions and invalidates pending tickets. Active gateway connections close on the next check (normally within one second). Without a configured master administrator, the last enabled database admin cannot be deleted, disabled or demoted. These website roles are independent of the shared Veyon credentials configured for the gateway.
-
-The **Appearance** tab in Settings controls the app name, primary colour, light/dark/device colour mode, logo and login-page graphic. These are saved directly to `local.php` as `app_name`, `primary_colour`, `theme`, `app_logo` and `login_graphic`. Uploaded images must be PNG, JPEG or WebP, up to 256 KB each; they are embedded in the config file, so there is no upload directory to configure. The public appearance endpoint exposes only branding values. Branding applies immediately after saving and to other users when they next load the page.
-
-Classrooms can be searched in the sidebar. Selecting one adds `?classroom=…` to the URL, so refreshing or bookmarking restores that classroom; Back and Forward also switch classrooms. Deleted or inaccessible classrooms fall back to All computers. Above the computer overview, choose Grid or List, adjust width and preview height, and choose 12, 24 or 48 computers per page. Display choices are remembered in that browser for this installation. Resizing and switching layouts preserve existing screenshots and do not restart preview connections. On small screens, list rows stack so the controls stay readable.
-
-The same **Settings** page manages preview concurrency, spacing, refresh/retry intervals and connection timeouts. Saving these settings updates the actual entries in `web/config/local.php` (or the file selected by `CLASSROOM_CONFIG`); no separate SQLite overrides are used. New gateway connections reread the file immediately; each browser picks up changes when its classroom is reloaded. Per-browser refresh-interval overrides still take precedence. Server credentials, site origin and routing remain in `local.php`/server configuration.
-
-The web server needs write access to the **configuration directory** because saves use a lock and an atomic file replacement. Setup's service-install step sets the directory to `root:www-data` with mode `2770`, and `local.php` to `0660` (substitute your service group). For an existing installation, adjust those permissions once, for example:
-
-```sh
-sudo chown root:www-data /var/www/html/VeyonWeb/web/config
-sudo chmod 2770 /var/www/html/VeyonWeb/web/config
-sudo chgrp www-data /var/www/html/VeyonWeb/web/config/local.php
-sudo chmod 0660 /var/www/html/VeyonWeb/web/config/local.php
-```
-
-Use your actual installation path. The configuration remains outside `web/public`. Normal array configurations retain comments, relative-path expressions and unrelated fields; computed configuration files are normalized to an explicit PHP array with their evaluated values preserved. A failed save leaves the old configuration intact and reports a permissions/error message. There is no database fallback.
-
-Preview and connection settings use only `local.php`. Old SQLite settings are ignored and are not migrated. Users, roles, classroom assignments and sessions remain in SQLite. Deploy the PHP and browser changes together and restart the gateway.
+3. Edit the newly created config file at `web/config/local.php`. In the `veyon` section, set your Veyon login method (`key` or `logon` ) using the `method` setting. If you use keys for authentication, set the key name and path to your private key in `key_name` and `private_key_file` respectively. Of course, don't forget to install the matching public key on the classroom PCs. For logon authentication, set `method` to `logon` and provide the Veyon `username` and `password`. 
 
 
-For account recovery, run `php scripts/setup.php` on the server. It creates or resets the master administrator credentials in `local.php`, without changing database users. It is a server-side CLI operation; there is no unauthenticated web registration or password-reset endpoint. If service installation is declined, ensure the web process and gateway can write the database and its directory.
+4. Open your new site in the browser and sign in using your set master admin username and password. Add computers using their hostname/IP and Veyon port, and their previews refresh automatically. Choose **View** for a live read-only session or **Remote control** for keyboard and mouse access.
 
-**Upgrading:** back up the SQLite database and local config, stop `veyon-gateway`, deploy the updated PHP and browser files together, reload the PHP web handler if it caches deployed code, then restart `veyon-gateway`. The schema migrates automatically. Restarting the gateway is required so existing worker processes use the new authorization checks. Sign in with the configured master administrator, then create the other users. Include the new `admin-settings.js` browser module in deployment.
+5. Any changes made to the configuration after installation, including in the web dashboard 'Settings' app will likely require the gateway to be restarted. To do so, run `sudo systemctl restart veyon-gateway` in Terminal.
 
-### Classroom actions
 
-- Screenshots use view-only connections through the gateway and wait for a rendered frame. One image downloads as PNG; multiple images download in a ZIP. The full-screen viewer also has a Screenshot button. Screenshot files stay in the browser until downloaded or the action dialog closes.
-- Messages, lock/unlock, websites, programs, restart, shutdown and logoff use authenticated Veyon feature messages sent by PHP on the web server. No additional public ports or Apache proxy rules are required. The web server must reach the PCs' Veyon ports and read the configured Veyon credentials. Screen viewing continues through the existing WebSocket gateway.
-- Restart, shutdown and logoff require confirmation in the action dialog. Unsaved work can be lost. Programs run in the target's user session. Use **Unlock screens** to end a screen lock.
-- **Sent** means a command was written to an authenticated Veyon connection. Veyon does not acknowledge execution for these actions. Client feature availability, access-control rules and an active user session determine whether they take effect. Verify operation on your deployed Veyon versions before using classroom-wide actions.
-- Wake-on-LAN requires a MAC address in each computer's Edit dialog (also preserved in JSON import/export), enabled firmware/network-adapter settings, the PHP sockets extension in the web server, and a reachable broadcast network. Configure `wake_broadcast` in `config/local.php` for your subnet if the default `255.255.255.255` is unsuitable. A sent packet does not confirm the PC powered on. Wake packets may not cross VLANs without network support.
-- File distribution sends one file per batch to Veyon's configured destination on each PC, normally the active user's home directory. Overwriting and opening the received file are optional and off by default. Veyon's distribution protocol does not acknowledge successful disk writes; **Sent** is not proof the file was saved. Check the client when a file already exists or a directory is not writable. Transfers can be partially delivered if the connection fails.
-- The default application upload limit is 20 MiB (`max_upload_bytes`, configurable up to 100 MiB). Set PHP's **web-server** `upload_max_filesize` to `20M` and `post_max_size` to at least `24M` (adjust for your chosen limit), then reload the PHP handler/Apache. An upstream proxy may impose its own upload limit. Uploads use PHP temporary files and are removed by PHP when each request ends.
+## Configuration after Installation
 
-Deploy the complete updated `web/public` and `web/php` files together. The MAC-address database column is added automatically without replacing the existing roster. Back up the database before deployment as usual. Existing local configuration files continue to work with defaults for the new settings. No screen-broadcast feature is included.
+### Users, roles and settings
 
-### Hosting under an existing website
+The permanent **master administrator** is stored in `config/local.php` as `masteradmin_username` and `masteradmin_password_hash`. It always has full access and remains available independently of database users. Run `php scripts/setup.php` to create or reset this backup account. Additional admins, supervisors and teachers are managed in the `Settings` page on the ap and stored in SQLite. The master account cannot be edited or deleted through Settings; its username is reserved.
 
-If Apache already serves this location and executes PHP, the page and login need no Apache changes. Set `'base_path' => null` in `web/config/local.php` (or select `auto` during setup). Open the public entry point directly, for example `https://bookit.highlands.ac.uk/Web/VeyonWeb/web/public/index.php`. Assets and API requests use that directory, and login cookies are scoped to it. Opening `index.php` explicitly avoids changing Apache's DirectoryIndex. Keep `origin` as the hostname origin without a path.
 
-Keep configuration, private keys and data outside the publicly accessible directory tree. If the whole checkout is inside an existing document root, verify those files are denied by existing server rules, or move the private files outside it (use `CLASSROOM_CONFIG` to select a configuration outside the checkout).
+Admins can open **Settings** in the sidebar to create accounts, choose roles, assign teacher classrooms, disable/delete users and reset passwords. 
 
-For a fixed public prefix behind an alias or proxy, set `base_path` explicitly, such as `/VeyonWeb`. Remote viewing/control still needs the WebSocket proxy below; the page and login do not. Keep `websocket_url` as `/remote` for that proxy.
 
-Add [the subdirectory Apache example](web/deploy/apache-subdirectory.conf.example) inside your existing HTTPS virtual host, adjusting the alias, directory and proxy prefix. Expose only `web/public`, never the project directory containing configuration and private data. Use `DirectoryIndex index.php` so PHP supplies the configured base URL. The frontend calls `api.php` directly, so API rewrites are unnecessary. The WebSocket proxy strips the public prefix before forwarding to the gateway's `/remote` endpoint.
+The **Appearance** tab in Settings controls the app name, primary colour, light/dark/device colour mode, logo and login-page graphic.
 
-Run `sudo apachectl configtest`, reload Apache and restart the gateway. For the example prefix, open `https://your-host/VeyonWeb/`.
-
-- Keep the dashboard and Veyon ports restricted to your trusted LAN or VPN.
-- Back up `web/config/local.php`, your Veyon private key and `web/data/classroom.sqlite`. Use SQLite's backup facility or stop services before copying the database.
-- For connection problems, check the Veyon credentials, PC reachability and access-control rules, then check Apache/PHP logs, `web/data/gateway.log` or `journalctl -u veyon-gateway`.
 
 This is an independent community client. Application source is GPL-2.0-or-later; noVNC is MPL-2.0. See [LICENSE](LICENSE) and [THIRD_PARTY.md](THIRD_PARTY.md).
