@@ -35,6 +35,9 @@ PHP;
         file_put_contents($path,$fixture);Settings::save(['overview_refresh_seconds'=>60,'overview_max_connections'=>4]);$raw=require $path;
         verify($raw['overview_refresh_seconds']===60&&$raw['overview_max_connections']===4,'Array format save failed.');
     }
+    Settings::save(['app_name'=>"School's \\ Classroom",'primary_colour'=>'#aabbcc','theme'=>'dark','app_logo'=>'']);
+    $raw=require $path;verify($raw['app_name']==="School's \\ Classroom"&&$raw['theme']==='dark'&&$raw['app_logo']==='','Appearance strings were not safely quoted.');
+    refuses(fn()=>Settings::save(['primary_colour'=>'invalid']));refuses(fn()=>Settings::save(['app_logo'=>'javascript:alert(1)']));
     if(!function_exists('posix_geteuid')||posix_geteuid()!==0){
         $before=file_get_contents($path);chmod($directory,0500);clearstatcache();refuses(fn()=>Settings::save(['overview_max_connections'=>2]));chmod($directory,0700);verify(file_get_contents($path)===$before,'A failed save damaged the configuration.');
     }

@@ -90,6 +90,13 @@ test('users: config master, role boundaries, assigned classrooms, settings, and 
       try{const failed=await json(admin,'/api/settings','PUT',{overview_refresh_seconds:46},500);assert.match(failed.error,/write access|permissions/);assert.equal(await readFile(configPath,'utf8'),saved);}
       finally{await chmod(configDirectory,0o700);}
     }
+    const png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aS1sAAAAASUVORK5CYII=';
+    const branding={app_name:"School's \\ Classroom",primary_colour:'#ffd900',theme:'dark',app_logo:png,login_graphic:png};
+    await json(admin,'/api/settings','PUT',branding);
+    const publicBranding=await json('','/api/appearance');assert.deepEqual(publicBranding.appearance,branding);assert.ok(!JSON.stringify(publicBranding).includes(hash));
+    assert.equal((await json(admin,'/api/settings')).settings.overview_refresh_seconds,45,'Appearance saves preserve connection settings');
+    for(const invalid of [{primary_colour:'red;display:none'},{theme:'anything'},{app_name:''},{app_logo:'data:image/svg+xml;base64,PHN2Zz4='},{login_graphic:'https://example.com/picture.png'}])await json(admin,'/api/settings','PUT',invalid,400);
+    await json(supervisor,'/api/settings','PUT',{theme:'light'},403);
     await json(admin,'/api/settings','PUT',{origin:'https://attacker.example'},400);
     await json(admin,'/api/users','PUT',{id:supervisorId,username:'supervisor',role:'admin'});
     await json(supervisor,'/api/users','GET',undefined,401);const promoted=await login('supervisor','supervisor-password');assert.equal((await json(promoted,'/api/session')).role,'admin');

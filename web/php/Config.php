@@ -13,6 +13,7 @@ final class Config
         if (!is_array($values)) throw new \RuntimeException('Configuration must return an array.');
         $config = array_replace_recursive([
             'origin' => 'http://127.0.0.1:8080', 'masteradmin_username' => 'admin', 'masteradmin_password_hash' => '',
+            'app_name'=>'VeyonWeb', 'primary_colour'=>'#215c48', 'theme'=>'light', 'app_logo'=>'', 'login_graphic'=>'',
             'base_path' => null, 'data_directory' => dirname(__DIR__) . '/data',
             'gateway_listen' => 'websocket://127.0.0.1:9001', 'websocket_url' => '/remote',
             'overview_refresh_seconds' => 30,

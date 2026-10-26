@@ -1,10 +1,12 @@
+import {applyAppearance} from './appearance.js?v=appearance-20261026';
 import RFB from './veyon-rfb.js?v=snapshot-pixels-20261026';
-import {setupAdminSettings} from './admin-settings.js?v=masteradmin-20261026';
-import {setupClassroomActions} from './classroom-actions.js?v=masteradmin-20261026';
+import {setupAdminSettings} from './admin-settings.js?v=appearance-20261026';
+import {setupClassroomActions} from './classroom-actions.js?v=appearance-20261026';
 import {captureDesktop,SnapshotOverview} from './snapshots.js?v=snapshot-pixels-20261026';
 const appBase = new URL('.', import.meta.url);
 const $ = selector => document.querySelector(selector);
 const icons = {
+  list:'<path d="M9 5h12M9 12h12M9 19h12M3 5h1M3 12h1M3 19h1"/>',
   grid:'<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
   monitor:'<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/>',
   plus:'<path d="M12 5v14M5 12h14"/>',
@@ -29,9 +31,32 @@ const icons = {
 function icon(name) { return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name] || icons.monitor}</svg>`; }
 function hydrateIcons(scope = document) { scope.querySelectorAll('[data-icon]').forEach(el => el.innerHTML = icon(el.dataset.icon)); }
 hydrateIcons();
+document.querySelectorAll('.file-label').forEach(label=>{label.tabIndex=0;label.setAttribute('role','button');label.onkeydown=event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();label.querySelector('input[type=file]').click();}};});
 const state = { computers: [], room: null, search: '', page: 0, pageSize: 12, monitoring: false, demo: false, ready: false, connections: new Map(), statuses: new Map(), generation: 0, remote: null, overviewRefreshSeconds: 30 };
 let toastTimer, pendingImport, overviewSnapshots, adminSettings;
 const snapshotURLs=new Map();
+const layoutStorageKey=`veyonweb-layout:${appBase.pathname}`;
+let layout={mode:'grid',width:360,height:200,pageSize:12};
+try{const saved=JSON.parse(localStorage.getItem(layoutStorageKey)||'{}');
+  if(['grid','list'].includes(saved.mode))layout.mode=saved.mode;
+  if(Number.isInteger(saved.width)&&saved.width>=280&&saved.width<=640)layout.width=saved.width;
+  if(Number.isInteger(saved.height)&&saved.height>=120&&saved.height<=400)layout.height=saved.height;
+  if([12,24,48].includes(saved.pageSize))layout.pageSize=saved.pageSize;
+}catch{}
+state.pageSize=layout.pageSize;
+function applyLayout(){
+  const grid=$('#computer-grid');grid.classList.toggle('list-view',layout.mode==='list');
+  grid.style.setProperty('--card-width',layout.width+'px');grid.style.setProperty('--preview-height',layout.height+'px');
+  $('#grid-view').setAttribute('aria-pressed',String(layout.mode==='grid'));$('#list-view').setAttribute('aria-pressed',String(layout.mode==='list'));
+  $('#card-width').value=layout.width;$('#card-height').value=layout.height;$('#page-size').value=layout.pageSize;
+  $('#card-width-value').textContent=layout.width+' px';$('#card-height-value').textContent=layout.height+' px';
+  try{localStorage.setItem(layoutStorageKey,JSON.stringify(layout));}catch{}
+}
+applyLayout();
+for(const mode of ['grid','list'])$(`#${mode}-view`).onclick=()=>{layout.mode=mode;applyLayout();};
+for(const name of ['width','height'])$(`#card-${name}`).oninput=event=>{layout[name]=Number(event.target.value);applyLayout();};
+$('#page-size').onchange=event=>{layout.pageSize=Number(event.target.value);state.pageSize=layout.pageSize;state.page=0;applyLayout();render();};
+$('#room-search').oninput=()=>renderNavigation();
 const refreshStorageKey=`veyonweb-overview-refresh:${appBase.pathname}`;
 function toast(text) { $('#toast').textContent = text; $('#toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => $('#toast').hidden = true, 5000); }
 function escapeHTML(value) { return String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -58,7 +83,8 @@ function renderNavigation() {
   $('#total-count').textContent = state.computers.length;
   $('#all-computers').classList.toggle('active', !state.room);
   const rooms = [...new Set(state.computers.map(c => c.room))].sort();
-  $('#room-list').innerHTML = rooms.map(room => `<button class="nav-item ${state.room === room ? 'active' : ''}" data-room="${escapeHTML(room)}">${icon('room')}<span>${escapeHTML(room)}</span><span class="room-count">${state.computers.filter(c => c.room === room).length}</span></button>`).join('');
+  $('#room-list').innerHTML = rooms.filter(room=>room.toLowerCase().includes($('#room-search').value.toLowerCase())).map(room => `<button class="nav-item ${state.room === room ? 'active' : ''}" data-room="${escapeHTML(room)}">${icon('room')}<span>${escapeHTML(room)}</span><span class="room-count">${state.computers.filter(c => c.room === room).length}</span></button>`).join('');
+  $('#room-search-empty').hidden=$('#room-list').childElementCount>0;
   $('#room-list').querySelectorAll('button').forEach(button => button.onclick = () => { state.room = button.dataset.room; state.page = 0; render(); });
   $('#room-suggestions').innerHTML = rooms.map(room => `<option value="${escapeHTML(room)}">`).join('');
   $('#room-title').innerHTML = `${escapeHTML(state.room || 'All computers')}<span class="heading-dot">.</span>`;
@@ -87,7 +113,7 @@ function render() {
   stopOverview(); clearSnapshots(); renderNavigation();
   const list = filtered(), page = currentPage();
   $('#view-count').textContent = list.length;
-  $('#computer-grid').innerHTML = page.map(c => `<article class="computer-card" id="computer-${c.id}"><label class="card-select"><input type="checkbox" class="select-computer" data-id="${c.id}" aria-label="Select ${escapeHTML(c.name)}">Select</label><div class="screen-wrap"><div class="thumbnail" id="screen-${c.id}"></div><div class="screen-placeholder">${icon('monitor')}<span>Ready to refresh</span></div><span class="screen-tag" hidden><span class="dot"></span>${state.demo ? 'SAMPLE PICTURE' : 'SNAPSHOT'}</span></div><div class="card-info"><div class="card-heading"><h3>${escapeHTML(c.name)}</h3><span class="computer-state"><span class="dot"></span>Not refreshed</span></div><p class="computer-address">${escapeHTML(c.host)} <span>· ${escapeHTML(c.room)}</span></p><div class="card-actions"><button class="button secondary view-button" data-id="${c.id}">${icon('eye')}View</button><button class="button control-button" data-id="${c.id}">${icon('pointer')}Remote control</button>${state.canManage?`<button class="icon-button edit-button" data-id="${c.id}" aria-label="Edit ${escapeHTML(c.name)}" title="Edit computer">${icon('edit')}</button>`:''}</div></div></article>`).join('');
+  $('#computer-grid').innerHTML = page.map(c => `<article class="computer-card" id="computer-${c.id}"><label class="card-select"><input type="checkbox" class="select-computer" data-id="${c.id}" aria-label="Select ${escapeHTML(c.name)}">Select</label><div class="screen-wrap"><div class="thumbnail" id="screen-${c.id}"></div><div class="screen-placeholder">${icon('monitor')}<span>Ready to refresh</span></div><span class="screen-tag" hidden><span class="dot"></span>${state.demo ? 'SAMPLE PICTURE' : 'SNAPSHOT'}</span></div><div class="card-info"><div class="card-heading"><h3>${escapeHTML(c.name)}</h3><span class="computer-state"><span class="dot"></span>Not refreshed</span></div><p class="computer-address">${escapeHTML(c.host)} <span>· ${escapeHTML(c.room)}</span></p><div class="card-actions"><button class="button secondary view-button" data-id="${c.id}">${icon('eye')}View</button><button class="button control-button" data-id="${c.id}">${icon('pointer')}Remote control</button>${state.canManage?`<button class="icon-button edit-button" data-id="${c.id}" aria-label="Edit ${escapeHTML(c.name)}" title="Edit computer">${icon('edit')}<span>Edit</span></button>`:''}</div></div></article>`).join('');
   $('#computer-grid').querySelectorAll('.view-button').forEach(b => b.onclick = () => openRemote(b.dataset.id, 'view'));
   $('#computer-grid').querySelectorAll('.control-button').forEach(b => b.onclick = () => openRemote(b.dataset.id, 'control'));
   $('#computer-grid').querySelectorAll('.edit-button').forEach(b => b.onclick = () => editComputer(b.dataset.id));
@@ -121,7 +147,7 @@ async function makeRFB(computer, target, mode, {signal} = {}) {
   return rfb;
 }
 function updateOverviewHint(){
-  $('#overview-status').textContent=state.monitoring?`Snapshot overview · each PC refreshes every ${state.overviewRefreshSeconds}s · Open View or Remote control for live video.`:(state.canManage?'Configure Veyon credentials to load desktop pictures automatically.':'Your administrator needs to finish setting up classroom access.');
+  $('#overview-status').textContent=state.monitoring?`Pictures refresh every ${state.overviewRefreshSeconds} seconds.`:(state.canManage?'Configure Veyon credentials to load desktop pictures automatically.':'Your administrator needs to finish setting up classroom access.');
 }
 function connectOverview(computers) {
   overviewSnapshots?.stop();
@@ -328,7 +354,7 @@ const classroomActions=setupClassroomActions({state,filtered,api,makeRFB,escapeH
 $('#remote-screenshot').onclick=()=>{if(state.remote)classroomActions.open('screenshot',[state.remote.computer]);};
 
 try{
-  const session=await api('/api/session');state.demo=session.demo;
+  const [branding,session]=await Promise.all([api('/api/appearance'),api('/api/session')]);applyAppearance(branding.appearance);state.demo=session.demo;
   if(session.authenticated)await showWorkspace(session);
   else{
     $('#login').hidden=false;

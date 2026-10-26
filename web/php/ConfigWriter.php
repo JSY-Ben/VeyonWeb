@@ -51,13 +51,13 @@ final class ConfigWriter
             if(!is_array($key)||$key[0]!==T_CONSTANT_ENCAPSED_STRING||!is_array($arrow)||$arrow[0]!==T_DOUBLE_ARROW)continue;
             $name=substr($key[1],1,-1);if(!array_key_exists($name,$values))continue;
             $first=$parts[2];$last=$parts[count($parts)-1];$end=$offsets[$last]+strlen(is_array($tokens[$last])?$tokens[$last][1]:$tokens[$last]);
-            $changes[]=[$offsets[$first],$end-$offsets[$first],(string)$values[$name]];$found[$name]=true;
+            $changes[]=[$offsets[$first],$end-$offsets[$first],var_export($values[$name],true)];$found[$name]=true;
         }
         $missing=array_diff_key($values,$found);
         if($missing){
             $last=$close-1;while($last>$root&&$ignored($tokens[$last]))$last--;
             $text=($last!==$root&&$tokens[$last]!==','?',':'')."\n";
-            foreach($missing as $name=>$value)$text.='    '.var_export($name,true).' => '.$value.",\n";
+            foreach($missing as $name=>$value)$text.='    '.var_export($name,true).' => '.var_export($value,true).",\n";
             $changes[]=[$offsets[$close],0,$text];
         }
         usort($changes,static fn($a,$b)=>$b[0]<=>$a[0]);

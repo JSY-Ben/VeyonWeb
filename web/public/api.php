@@ -22,11 +22,12 @@ try {
         $route = substr($route, strlen($config['base_path']));
     }
     if (!in_array($method, ['GET', 'HEAD', 'OPTIONS'], true) && ($_SERVER['HTTP_ORIGIN'] ?? '') !== $config['origin']) respond(403, ['error' => 'Request origin rejected.']);
+    if($route==='/api/appearance' && $method==='GET')respond(200,['appearance'=>Settings::appearance($config)]);
     $upload = $route === '/api/files' && $method === 'POST';
-    $limit = $upload ? $config['max_upload_bytes'] + 65536 : 131072;
+    $limit = $upload ? $config['max_upload_bytes'] + 65536 : ($route==='/api/settings'?1048576:131072);
     if ((int)($_SERVER['CONTENT_LENGTH'] ?? 0) > $limit) respond(413, ['error' => 'Request exceeds the configured size limit.']);
-    $raw = $upload ? '' : file_get_contents('php://input', false, null, 0, 131073);
-    if (strlen($raw) > 131072) respond(413, ['error' => 'Request is too large.']);
+    $raw = $upload ? '' : file_get_contents('php://input', false, null, 0, $limit+1);
+    if (strlen($raw) > $limit) respond(413, ['error' => 'Request is too large.']);
     $body = $raw !== '' ? json_decode($raw, true, 64, JSON_THROW_ON_ERROR) : [];
     $db = new Database($config['database']); $db->cleanup();
     $users=new Users($db);

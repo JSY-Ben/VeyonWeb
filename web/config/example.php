@@ -5,6 +5,12 @@ return [
     // null detects the URL directory automatically; override with '/VeyonWeb'
     // or '' for the site root if using a proxy or URL rewriting.
     'base_path' => null,
+    // Appearance is also editable in the administrator's Settings page.
+    'app_name' => 'VeyonWeb',
+    'primary_colour' => '#215c48',
+    'theme' => 'light', // light, dark or system
+    'app_logo' => '', // Image uploads are saved here as data URLs.
+    'login_graphic' => '',
     'masteradmin_username' => 'admin',
     // Permanent backup administrator; managed only through this file or CLI setup.
     // Additional users, including other admins, are stored in SQLite.

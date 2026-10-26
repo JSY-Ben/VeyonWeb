@@ -47,7 +47,7 @@ for(const method of ['key','logon'])test(`${apache?'Apache/PHP-FPM':'PHP HTTP'} 
       const child=spawn(command,args,{env:{...process.env,CLASSROOM_CONFIG:configPath,VEYON_DEMO:'0'},stdio:['ignore','pipe','pipe']});children.push(child);child.stdout.on('data',data=>logs+=data);child.stderr.on('data',data=>logs+=data);
     }
     let started=false;for(let i=0;i<80;i++){try{const response=await request('/api/session');if(response.ok){started=true;break;}}catch{}await delay(50);}assert.ok(started,logs);await delay(100);
-    const page=await request('/');assert.equal(page.status,200,apache?await readFile(path.join(dir,'apache.log'),'utf8'):'Main page failed');assert.match(await page.text(),/Teacher workspace/);
+    const page=await request('/');assert.equal(page.status,200,apache?await readFile(path.join(dir,'apache.log'),'utf8'):'Main page failed');assert.match(await page.text(),/<title>VeyonWeb<\/title>/);
     const bundle=await request('/rfb.js');assert.equal(bundle.status,200);assert.match(bundle.headers.get('content-type'),/javascript/);
     assert.equal((await request('/api/computers')).status,401);
     assert.equal((await request('/api/login','POST',{username:'teacher',password:'integration-password'},'https://attacker.example')).status,403);
