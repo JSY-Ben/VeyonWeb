@@ -93,7 +93,7 @@ test('users: config master, role boundaries, assigned classrooms, settings, and 
     const png='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aS1sAAAAASUVORK5CYII=';
     const branding={app_name:"School's \\ Classroom",primary_colour:'#ffd900',theme:'dark',app_logo:png,login_graphic:png};
     await json(admin,'/api/settings','PUT',branding);
-    const publicBranding=await json('','/api/appearance');assert.deepEqual(publicBranding.appearance,branding);assert.ok(!JSON.stringify(publicBranding).includes(hash));
+    const publicBranding=await json('','/api/appearance');assert.deepEqual(publicBranding.appearance,branding);assert.equal(publicBranding.version,(await readFile(new URL('../VERSION',import.meta.url),'utf8')).trim());assert.ok(!JSON.stringify(publicBranding).includes(hash));
     assert.equal((await json(admin,'/api/settings')).settings.overview_refresh_seconds,45,'Appearance saves preserve connection settings');
     for(const invalid of [{primary_colour:'red;display:none'},{theme:'anything'},{app_name:''},{app_logo:'data:image/svg+xml;base64,PHN2Zz4='},{login_graphic:'https://example.com/picture.png'}])await json(admin,'/api/settings','PUT',invalid,400);
     await json(supervisor,'/api/settings','PUT',{theme:'light'},403);

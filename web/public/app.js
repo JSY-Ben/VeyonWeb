@@ -374,7 +374,7 @@ const classroomActions=setupClassroomActions({state,filtered,api,makeRFB,escapeH
 $('#remote-screenshot').onclick=()=>{if(state.remote)classroomActions.open('screenshot',[state.remote.computer]);};
 
 try{
-  const [branding,session]=await Promise.all([api('/api/appearance'),api('/api/session')]);applyAppearance(branding.appearance);state.demo=session.demo;
+  const [branding,session]=await Promise.all([api('/api/appearance'),api('/api/session')]);applyAppearance(branding.appearance);$('#app-version').textContent=` - Version ${branding.version}`;state.demo=session.demo;
   if(session.authenticated)await showWorkspace(session);
   else{
     $('#login').hidden=false;

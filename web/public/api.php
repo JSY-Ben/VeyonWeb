@@ -22,7 +22,7 @@ try {
         $route = substr($route, strlen($config['base_path']));
     }
     if (!in_array($method, ['GET', 'HEAD', 'OPTIONS'], true) && ($_SERVER['HTTP_ORIGIN'] ?? '') !== $config['origin']) respond(403, ['error' => 'Request origin rejected.']);
-    if($route==='/api/appearance' && $method==='GET')respond(200,['appearance'=>Settings::appearance($config)]);
+    if($route==='/api/appearance' && $method==='GET')respond(200,['appearance'=>Settings::appearance($config),'version'=>\Classroom\Version::current()]);
     $upload = $route === '/api/files' && $method === 'POST';
     $limit = $upload ? $config['max_upload_bytes'] + 65536 : ($route==='/api/settings'?1048576:131072);
     if ((int)($_SERVER['CONTENT_LENGTH'] ?? 0) > $limit) respond(413, ['error' => 'Request exceeds the configured size limit.']);

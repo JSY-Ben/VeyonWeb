@@ -10,26 +10,45 @@ final class Database
         if (!is_dir(dirname($path)) && !mkdir(dirname($path), 0770, true) && !is_dir(dirname($path))) throw new \RuntimeException('Cannot create data directory.');
         $this->pdo = new \PDO('sqlite:' . $path, null, null, [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION, \PDO::ATTR_DEFAULT_FETCH_MODE => \PDO::FETCH_ASSOC]);
         $this->pdo->exec('PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL;');
-        $this->pdo->exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, username TEXT NOT NULL, expires INTEGER NOT NULL);
-            CREATE TABLE IF NOT EXISTS master_sessions (session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE, fingerprint TEXT NOT NULL);
-            CREATE TABLE IF NOT EXISTS computers (id TEXT PRIMARY KEY, name TEXT NOT NULL, host TEXT NOT NULL, port INTEGER NOT NULL, room TEXT NOT NULL);
-            CREATE TABLE IF NOT EXISTS tickets (id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, computer_id TEXT NOT NULL REFERENCES computers(id) ON DELETE CASCADE, mode TEXT NOT NULL, expires INTEGER NOT NULL, generation INTEGER NOT NULL);
-            CREATE TABLE IF NOT EXISTS attempts (ip TEXT PRIMARY KEY, count INTEGER NOT NULL, expires INTEGER NOT NULL);
-            CREATE TABLE IF NOT EXISTS meta (name TEXT PRIMARY KEY, value INTEGER NOT NULL);
-            INSERT OR IGNORE INTO meta VALUES (\'generation\', 0);');
-        $this->pdo->exec("CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL COLLATE NOCASE UNIQUE,
-            password_hash TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('admin','supervisor','teacher')),
-            enabled INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL);
-            CREATE TABLE IF NOT EXISTS user_classrooms (user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, room TEXT NOT NULL, PRIMARY KEY(user_id,room));
-            ");
-        if (!in_array('mac', array_column($this->query('PRAGMA table_info(computers)')->fetchAll(), 'name'), true)) {
-            try { $this->pdo->exec("ALTER TABLE computers ADD COLUMN mac TEXT NOT NULL DEFAULT ''"); }
-            catch (\PDOException $error) {
-                if (!in_array('mac', array_column($this->query('PRAGMA table_info(computers)')->fetchAll(), 'name'), true)) throw $error;
-            }
-        }
+        $this->migrate();
     }
+    private function migrate(): void
+    {
+        $targetVersion = Version::schemaNumber();
+        $version = (int)$this->query('PRAGMA user_version')->fetchColumn();
+        if ($version > $targetVersion) throw new \RuntimeException('Database schema is newer than this version of VeyonWeb. Upgrade the application.');
+        if ($version === $targetVersion) return;
+        $this->transaction(function () use ($targetVersion): void {
+            // Recheck after acquiring the write lock: another process may have migrated it.
+            $version = (int)$this->query('PRAGMA user_version')->fetchColumn();
+            if ($version > $targetVersion) throw new \RuntimeException('Database schema is newer than this version of VeyonWeb. Upgrade the application.');
+            if ($version === $targetVersion) return;
+            // Adopt unversioned and original schema-1 installations without replacing their data.
+            $this->pdo->exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, username TEXT NOT NULL, expires INTEGER NOT NULL);
+                CREATE TABLE IF NOT EXISTS master_sessions (session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE, fingerprint TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS computers (id TEXT PRIMARY KEY, name TEXT NOT NULL, host TEXT NOT NULL, port INTEGER NOT NULL, room TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS tickets (id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, computer_id TEXT NOT NULL REFERENCES computers(id) ON DELETE CASCADE, mode TEXT NOT NULL, expires INTEGER NOT NULL, generation INTEGER NOT NULL);
+                CREATE TABLE IF NOT EXISTS attempts (ip TEXT PRIMARY KEY, count INTEGER NOT NULL, expires INTEGER NOT NULL);
+                CREATE TABLE IF NOT EXISTS meta (name TEXT PRIMARY KEY, value INTEGER NOT NULL);
+                INSERT OR IGNORE INTO meta VALUES (\'generation\', 0);');
+            $this->pdo->exec("CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL COLLATE NOCASE UNIQUE,
+                password_hash TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('admin','supervisor','teacher')),
+                enabled INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL);
+                CREATE TABLE IF NOT EXISTS user_classrooms (user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, room TEXT NOT NULL, PRIMARY KEY(user_id,room));
+                ");
+            if (!in_array('mac', array_column($this->query('PRAGMA table_info(computers)')->fetchAll(), 'name'), true)) {
+                try { $this->pdo->exec("ALTER TABLE computers ADD COLUMN mac TEXT NOT NULL DEFAULT ''"); }
+                catch (\PDOException $error) {
+                    if (!in_array('mac', array_column($this->query('PRAGMA table_info(computers)')->fetchAll(), 'name'), true)) throw $error;
+                }
+            }
+            $this->pdo->exec('CREATE TABLE IF NOT EXISTS schema_metadata (id INTEGER PRIMARY KEY CHECK(id = 1), version TEXT NOT NULL)');
+            $this->query('INSERT INTO schema_metadata (id,version) VALUES (1,?) ON CONFLICT(id) DO UPDATE SET version=excluded.version', [Version::number()]);
+            $this->pdo->exec('PRAGMA user_version = ' . $targetVersion);
+        });
+    }
+
     public function query(string $sql, array $args = []): \PDOStatement { $statement = $this->pdo->prepare($sql); $statement->execute($args); return $statement; }
     public function transaction(callable $callback): mixed
     {

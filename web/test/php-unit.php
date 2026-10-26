@@ -15,6 +15,43 @@ function same(mixed $actual,mixed $expected): void { check($actual === $expected
 function rejects(callable $function): void { try { $function(); } catch (Throwable) { return; } throw new RuntimeException('Expected an exception.'); }
 function runTest(string $name,callable $function): void { global $passed; $function(); $passed++; echo "PASS $name\n"; }
 
+runTest('Application version comes from the repository version file',function (): void {
+    same(\Classroom\Version::current(), trim(file_get_contents(dirname(__DIR__) . '/VERSION')));
+    check(\Classroom\Version::current() !== '', 'Version must not be empty.');
+});
+runTest('Schema versions initialize, adopt legacy data, remain stable and reject newer databases',function (): void {
+    $path = tempnam(sys_get_temp_dir(), 'veyon-schema-');
+    try {
+        $db = new Database($path);
+        same((int)$db->query('PRAGMA user_version')->fetchColumn(), \Classroom\Version::schemaNumber());
+        // Simulate an unversioned installation with existing data and an older computers table.
+        $db->pdo->exec("DROP TABLE tickets; DROP TABLE computers;
+            CREATE TABLE computers (id TEXT PRIMARY KEY, name TEXT NOT NULL, host TEXT NOT NULL, port INTEGER NOT NULL, room TEXT NOT NULL);
+            INSERT INTO computers VALUES ('legacy','Existing PC','pc.local',11100,'Room 1');
+            PRAGMA user_version = 0;");
+        $db = new Database($path);
+        same($db->roster()[0]['name'], 'Existing PC');
+        same($db->roster()[0]['mac'], '');
+        same((int)$db->query('PRAGMA user_version')->fetchColumn(), \Classroom\Version::schemaNumber());
+        same($db->query('SELECT version FROM schema_metadata WHERE id=1')->fetchColumn(), \Classroom\Version::number());
+        $db->pdo->exec('PRAGMA user_version = 1');
+        $db = new Database($path);
+        same((int)$db->query('PRAGMA user_version')->fetchColumn(), \Classroom\Version::schemaNumber());
+        same(count($db->roster()), 1);
+        $schema = $db->query('PRAGMA schema_version')->fetchColumn();
+        $db = new Database($path);
+        same($db->query('PRAGMA schema_version')->fetchColumn(), $schema);
+        same(count($db->roster()), 1);
+        $db->pdo->exec('PRAGMA user_version = 2147483647');
+        rejects(fn() => new Database($path));
+        same((int)$db->query('PRAGMA user_version')->fetchColumn(), 2147483647);
+        same(count($db->roster()), 1);
+    } finally {
+        unset($db);
+        foreach ([$path, $path . '-wal', $path . '-shm'] as $file) if (is_file($file)) unlink($file);
+    }
+});
+
 runTest('Gateway worker configuration defaults and rejects unsafe counts',function (): void {
     $previous = getenv('CLASSROOM_CONFIG');
     $path = tempnam(sys_get_temp_dir(), 'veyon-config-');
