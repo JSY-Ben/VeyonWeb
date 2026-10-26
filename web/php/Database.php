@@ -11,6 +11,7 @@ final class Database
         $this->pdo = new \PDO('sqlite:' . $path, null, null, [\PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION, \PDO::ATTR_DEFAULT_FETCH_MODE => \PDO::FETCH_ASSOC]);
         $this->pdo->exec('PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL;');
         $this->pdo->exec('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, username TEXT NOT NULL, expires INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS master_sessions (session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE, fingerprint TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS computers (id TEXT PRIMARY KEY, name TEXT NOT NULL, host TEXT NOT NULL, port INTEGER NOT NULL, room TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS tickets (id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE, computer_id TEXT NOT NULL REFERENCES computers(id) ON DELETE CASCADE, mode TEXT NOT NULL, expires INTEGER NOT NULL, generation INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS attempts (ip TEXT PRIMARY KEY, count INTEGER NOT NULL, expires INTEGER NOT NULL);
@@ -21,7 +22,7 @@ final class Database
             password_hash TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('admin','supervisor','teacher')),
             enabled INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS user_classrooms (user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, room TEXT NOT NULL, PRIMARY KEY(user_id,room));
-            CREATE TABLE IF NOT EXISTS settings (name TEXT PRIMARY KEY, value TEXT NOT NULL);");
+            ");
         if (!in_array('mac', array_column($this->query('PRAGMA table_info(computers)')->fetchAll(), 'name'), true)) {
             try { $this->pdo->exec("ALTER TABLE computers ADD COLUMN mac TEXT NOT NULL DEFAULT ''"); }
             catch (\PDOException $error) {
@@ -51,9 +52,18 @@ final class Database
     }
     public function sessionById(string $id): ?array
     {
-        $session = $this->query('SELECT s.*, u.id AS user_id, u.role FROM sessions s JOIN users u ON u.username=s.username COLLATE NOCASE WHERE s.id=? AND s.expires>? AND u.enabled=1', [$id,time()])->fetch();
-        return $session ?: null;
+        $master=Users::master();
+        $session=$this->query('SELECT s.*,m.fingerprint FROM sessions s LEFT JOIN master_sessions m ON m.session_id=s.id WHERE s.id=? AND s.expires>?',[$id,time()])->fetch();
+        if(!$session)return null;
+        if($session['fingerprint']!==null){
+            if(!$master || !hash_equals($master['fingerprint'],$session['fingerprint']) || $session['username']!==$master['username'])return null;
+            unset($session['fingerprint']);return $session+['user_id'=>0,'role'=>'admin','is_master'=>true];
+        }
+        if($master && strcasecmp($session['username'],$master['username'])===0)return null;
+        $user=$this->query('SELECT id AS user_id,role FROM users WHERE username=? COLLATE NOCASE AND enabled=1',[$session['username']])->fetch();
+        unset($session['fingerprint']);return $user ? $session+$user : null;
     }
+
     public function canAccess(array $session, string $room): bool
     {
         if (in_array($session['role'], ['admin','supervisor'], true)) return true;

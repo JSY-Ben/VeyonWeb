@@ -51,7 +51,7 @@ runTest('Invalid Veyon greetings remain rejected', function (): void {
 runTest('SQLite ticket consumption, logout and roster revocation',function (): void {
     $path=sys_get_temp_dir().'/veyon-php-unit-'.bin2hex(random_bytes(8)).'.sqlite';
     try {
-        $db=new Database($path);(new Users($db))->bootstrap('teacher',password_hash('test-password',PASSWORD_DEFAULT));$cookie=bin2hex(random_bytes(32));$sessionId=hash('sha256',$cookie);
+        $db=new Database($path);(new Users($db))->save(['username'=>'teacher','password'=>'test-password','role'=>'admin']);$cookie=bin2hex(random_bytes(32));$sessionId=hash('sha256',$cookie);
         $db->query('INSERT INTO sessions VALUES (?,?,?)',[$sessionId,'teacher',time()+100]);
         $db->saveRoster(Database::validateRoster([['id'=>'lab','name'=>'Lab','host'=>'lab.local','port'=>11100,'room'=>'Lab']]));
         $ticket=bin2hex(random_bytes(32));$db->query('INSERT INTO tickets VALUES (?,?,?,?,?,?)',[hash('sha256',$ticket),$sessionId,'lab','control',time()+30,$db->generation()]);
@@ -62,7 +62,7 @@ runTest('SQLite ticket consumption, logout and roster revocation',function (): v
         $db=null;
     } finally {foreach ([$path,$path.'-wal',$path.'-shm'] as $file)if(is_file($file))unlink($file);}
 });
-runTest('User migration, role scope, ticket enforcement and administrator lockout protection', function (): void {
+runTest('User role scope, ticket enforcement and administrator lockout protection', function (): void {
     $emptyDb=new Database(':memory:');$firstUsers=new Users($emptyDb);
     $firstId=$firstUsers->save(['username'=>'first','password'=>'first-account-password','role'=>'teacher','enabled'=>false]);
     same($firstUsers->find('first')['role'],'admin');same((int)$firstUsers->find('first')['enabled'],1);
@@ -70,8 +70,7 @@ runTest('User migration, role scope, ticket enforcement and administrator lockou
     try{
         $db=new Database($path);$users=new Users($db);$hash=password_hash('legacy-password',PASSWORD_DEFAULT);
         $db->query('INSERT INTO sessions VALUES (?,?,?)',[str_repeat('a',64),'teacher',time()+60]);
-        $users->bootstrap('teacher',$hash);same($users->find('teacher')['role'],'admin');same((int)$db->query('SELECT COUNT(*) FROM sessions')->fetchColumn(),0);
-        $users->bootstrap('other',$hash);same($users->find('other'),null);
+        $users->save(['username'=>'teacher','password'=>'legacy-password','role'=>'admin']);
         $db->saveRoster(Database::validateRoster([['id'=>'a','name'=>'A','host'=>'a.local','port'=>11100,'room'=>'Room A'],['id'=>'b','name'=>'B','host'=>'b.local','port'=>11100,'room'=>'Room B']]));
         $admin=(int)$users->find('teacher')['id'];
         $teacher=$users->save(['username'=>'restricted','password'=>'restricted-password','role'=>'teacher','classrooms'=>['Room A']]);
@@ -94,8 +93,7 @@ runTest('User migration, role scope, ticket enforcement and administrator lockou
         foreach($users->listing() as $user)check(!array_key_exists('password_hash',$user),'Password hash exposed.');
         $db->query('INSERT INTO sessions VALUES (?,?,?)',[$sid,'restricted',time()+60]);
         $users->save(['id'=>$teacher,'username'=>'restricted','role'=>'teacher','enabled'=>false,'classrooms'=>['Room B']]);same($db->session($cookie),null);
-        Settings::save($db,['overview_max_connections'=>2]);same(Settings::apply($db,['overview_max_connections'=>3])['overview_max_connections'],2);
-        rejects(fn()=>Settings::save($db,['origin'=>'https://attacker.example']));rejects(fn()=>Settings::save($db,['overview_max_connections'=>0]));
+        rejects(fn()=>Settings::save(['origin'=>'https://attacker.example']));rejects(fn()=>Settings::save(['overview_max_connections'=>0]));
         $db=null;
     }finally{foreach([$path,$path.'-wal',$path.'-shm'] as $file)if(is_file($file))unlink($file);}
 });

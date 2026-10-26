@@ -15,7 +15,7 @@ export function setupAdminSettings({state,api,escapeHTML,onSessionRevoked,onSett
     $('#user-no-rooms').hidden=rooms.length>0;
   }
   function renderUsers(){
-    $('#users-list').innerHTML=users.map(user=>`<tr><td><strong>${escapeHTML(user.username)}</strong>${user.id===state.userId?' <small>(you)</small>':''}${user.enabled?'':' <small>Disabled</small>'}</td><td>${escapeHTML(user.role)}</td><td>${user.role==='teacher'?(user.classrooms.length?user.classrooms.map(escapeHTML).join(', '):'No classrooms'):'All classrooms'}</td><td><button type="button" class="button secondary user-edit" aria-label="Edit ${escapeHTML(user.username)}" data-id="${user.id}">Edit</button><button type="button" class="button danger user-delete" aria-label="Delete ${escapeHTML(user.username)}" data-id="${user.id}">Delete</button></td></tr>`).join('');
+    $('#users-list').innerHTML=users.map(user=>`<tr><td><strong>${escapeHTML(user.username)}</strong>${user.id===state.userId?' <small>(you)</small>':''}${user.reserved?' <small>Reserved by config master; database login unavailable</small>':''}${user.enabled?'':' <small>Disabled</small>'}</td><td>${escapeHTML(user.role)}</td><td>${user.role==='teacher'?(user.classrooms.length?user.classrooms.map(escapeHTML).join(', '):'No classrooms'):'All classrooms'}</td><td><button type="button" class="button secondary user-edit" ${user.reserved?'disabled':''} aria-label="Edit ${escapeHTML(user.username)}" data-id="${user.id}">Edit</button><button type="button" class="button danger user-delete" aria-label="Delete ${escapeHTML(user.username)}" data-id="${user.id}">Delete</button></td></tr>`).join('');
     document.querySelectorAll('.user-edit').forEach(button=>button.onclick=()=>{
       const user=users.find(user=>user.id===Number(button.dataset.id));editing=user.id;form.reset();
       form.elements.username.value=user.username;form.elements.username.disabled=true;
@@ -41,7 +41,9 @@ export function setupAdminSettings({state,api,escapeHTML,onSessionRevoked,onSett
     try{
       const [userData,settingsData]=await Promise.all([api('/api/users'),api('/api/settings')]);
       if(!dialog.open||!state.canManage)return;
+      $('#masteradmin-info').textContent=userData.masterAdmin?`Master administrator: ${userData.masterAdmin.username}. This backup account is managed in config/local.php and always has full access.`:'No master administrator configured in local.php.';
       users=userData.users;rooms=userData.classrooms;renderUsers();resetUser();
+      $('#settings-error').textContent=settingsData.notice||'';
       $('#web-setting-fields').innerHTML=Object.entries(settingsData.settings).map(([name,value])=>`<label>${labels[name]}<input type="number" name="${name}" value="${value}" min="${ranges[name][0]}" max="${ranges[name][1]}" step="1" required></label>`).join('');
     }catch(error){$('#settings-error').textContent=error.message;}
   }
@@ -60,9 +62,9 @@ export function setupAdminSettings({state,api,escapeHTML,onSessionRevoked,onSett
   form.elements.role.onchange=()=>renderRooms([...form.querySelectorAll('input[name="classrooms"]:checked')].map(input=>input.value));
   $('#new-user').onclick=resetUser;
   $('#web-settings-form').onsubmit=async event=>{
-    event.preventDefault();const button=$('#web-settings-save');button.disabled=true;$('#settings-error').textContent='';
+    event.preventDefault();const button=$('#web-settings-save');button.disabled=true;$('#settings-error').textContent='';$('#settings-saved').textContent='';
     const values=Object.fromEntries([...new FormData(event.target)].map(([key,value])=>[key,Number(value)]));
-    try{await api('/api/settings',{method:'PUT',body:JSON.stringify(values)});await onSettingsChanged();$('#settings-saved').textContent='Web settings saved. New connections use these settings.';}
+    try{await api('/api/settings',{method:'PUT',body:JSON.stringify(values)});await onSettingsChanged();$('#settings-saved').textContent='Saved to local.php. New connections use these settings.';}
     catch(error){$('#settings-error').textContent=error.message;}finally{button.disabled=false;}
   };
   $('#settings-button').onclick=open;$('#settings-close').onclick=close;

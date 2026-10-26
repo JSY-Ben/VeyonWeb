@@ -29,7 +29,7 @@ for(const method of ['key','logon'])test(`${apache?'Apache/PHP-FPM':'PHP HTTP'} 
   try{
     await writeFile(path.join(dir,'key.pem'),privateKey,{mode:0o600});
     const hash=spawnSync('php',['-r',"echo password_hash('integration-password', PASSWORD_DEFAULT);"],{encoding:'utf8'}).stdout;
-    const config={origin,preview_timeout_seconds:3,teacher_username:'teacher',teacher_password_hash:hash,database:path.join(dir,'data.sqlite'),gateway_listen:`websocket://127.0.0.1:${wsPort}`,websocket_url:apache?'/remote':`ws://127.0.0.1:${wsPort}/remote`,veyon:{method,username:'teacher',key_name:'teacher',private_key_file:path.join(dir,'key.pem'),password:'secret-password'}};
+    const config={origin,preview_timeout_seconds:3,masteradmin_username:'teacher',masteradmin_password_hash:hash,database:path.join(dir,'data.sqlite'),gateway_listen:`websocket://127.0.0.1:${wsPort}`,websocket_url:apache?'/remote':`ws://127.0.0.1:${wsPort}/remote`,veyon:{method,username:'teacher',key_name:'teacher',private_key_file:path.join(dir,'key.pem'),password:'secret-password'}};
     const configPath=path.join(dir,'config.php');await writeFile(configPath,`<?php return json_decode(base64_decode('${Buffer.from(JSON.stringify(config)).toString('base64')}'), true);`);
     const commands=apache?[]:[['php','-S',`127.0.0.1:${httpPort}`,'-t','public','router.php']];
     if(apache){

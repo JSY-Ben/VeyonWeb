@@ -3,7 +3,6 @@ declare(strict_types=1);
 use Classroom\Bridge;
 use Classroom\Config;
 use Classroom\Database;
-use Classroom\Settings;
 use Workerman\Worker;
 use Workerman\Timer;
 use Workerman\Protocols\Websocket;
@@ -53,7 +52,7 @@ $worker->onWebSocketConnect = function (TcpConnection $connection,Request $reque
 };
 $worker->onWebSocketConnected = function (TcpConnection $connection) use (&$bridges,&$authorizations,&$db,$config): void {
     if (!isset($authorizations[$connection->id])) return;
-    try { $effective=Settings::apply($db,$config);$bridges[$connection->id] = new Bridge($connection,$authorizations[$connection->id],$config['veyon'],$effective['connection_timeout_seconds'],$effective['preview_timeout_seconds']); }
+    try { $effective=Config::load();$bridges[$connection->id] = new Bridge($connection,$authorizations[$connection->id],$config['veyon'],$effective['connection_timeout_seconds'],$effective['preview_timeout_seconds']); }
     catch (\Throwable $error) { $connection->close(); }
 };
 $worker->onMessage = function (TcpConnection $connection,string $bytes) use (&$bridges): void {

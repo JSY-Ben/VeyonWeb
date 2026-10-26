@@ -5,10 +5,10 @@ return [
     // null detects the URL directory automatically; override with '/VeyonWeb'
     // or '' for the site root if using a proxy or URL rewriting.
     'base_path' => null,
-    'teacher_username' => 'admin',
-    // Legacy key names: used only to bootstrap the first administrator.
-    // Users and password changes are stored in SQLite after initial setup.
-    'teacher_password_hash' => '',
+    'masteradmin_username' => 'admin',
+    // Permanent backup administrator; managed only through this file or CLI setup.
+    // Additional users, including other admins, are stored in SQLite.
+    'masteradmin_password_hash' => '',
     // Absolute directory for the SQLite database, gateway log and PID file.
     // Create it with www-data ownership and match the service's ReadWritePaths.
     'data_directory' => dirname(__DIR__) . '/data',

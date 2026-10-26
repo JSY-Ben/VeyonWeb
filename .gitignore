@@ -2,6 +2,7 @@
 web/node_modules/
 web/.env
 web/config/local.php
+web/config/.veyon-*
 web/vendor/
 web/data/*
 !web/data/example.json

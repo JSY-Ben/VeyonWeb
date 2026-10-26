@@ -16,9 +16,9 @@ try {
     require dirname(__DIR__).'/vendor/autoload.php';
     $path=dirname(__DIR__).'/config/local.php';
     $config=require (is_file($path)?$path:dirname(__DIR__).'/config/example.php');
-    $defaultAdmin=$config['teacher_username']??'admin';
-    $config['teacher_username']=ask('Administrator username ['.$defaultAdmin.']: ') ?: $defaultAdmin;
-    if(!preg_match('/^[a-zA-Z0-9._-]{1,64}$/',$config['teacher_username']))throw new RuntimeException('Use letters, digits, dots, underscores or hyphens.');
+    $defaultAdmin=$config['masteradmin_username']??'admin';
+    $config['masteradmin_username']=ask('Master administrator username ['.$defaultAdmin.']: ') ?: $defaultAdmin;
+    if(!preg_match('/^[a-zA-Z0-9._-]{1,64}$/',$config['masteradmin_username']))throw new RuntimeException('Use letters, digits, dots, underscores or hyphens.');
     $origin=ask('Site origin [https://classroom.school.example]: ') ?: 'https://classroom.school.example';
     $parts=parse_url($origin);
     if(!$parts || !in_array($parts['scheme']??'',['http','https'],true) || empty($parts['host']) || isset($parts['path']) || isset($parts['query']) || isset($parts['fragment']) || isset($parts['user']))throw new RuntimeException('Enter a complete origin without a trailing slash.');
@@ -28,23 +28,20 @@ try {
     if($base==='/')$base='';
     if($base!=='auto' && $base!=='' && !preg_match('~^(/[A-Za-z0-9_-][A-Za-z0-9._-]*)+/?$~D',$base))throw new RuntimeException('Use auto, a URL path such as /VeyonWeb, or / for the site root.');
     $config['base_path']=$base==='auto' ? null : rtrim($base,'/');
-    $password=secret('Administrator password (12–72 characters): ');
+    $password=secret('Master administrator password (12–72 characters): ');
     if(strlen($password)<12||strlen($password)>72)throw new RuntimeException('Use a password of 12–72 bytes.');
     if(!hash_equals($password,secret('Confirm password: ')))throw new RuntimeException('Passwords did not match.');
-    $config['origin']=$origin;$config['teacher_password_hash']=password_hash($password,defined('PASSWORD_ARGON2ID')?PASSWORD_ARGON2ID:PASSWORD_DEFAULT);
+    $config['origin']=$origin;$config['masteradmin_password_hash']=password_hash($password,defined('PASSWORD_ARGON2ID')?PASSWORD_ARGON2ID:PASSWORD_DEFAULT);
     $defaultDirectory=$config['data_directory'] ?? dirname($config['database'] ?? dirname(__DIR__).'/data/classroom.sqlite');
     $directory=ask('Data directory ['.$defaultDirectory.']: ') ?: $defaultDirectory;
     if(!str_starts_with($directory,'/') || str_contains($directory,"\0"))throw new RuntimeException('Use an absolute data directory path.');
     $config['data_directory']=rtrim($directory,'/') ?: '/';
     if(isset($config['database']) && $directory!==$defaultDirectory)$config['database']=rtrim($directory,'/').'/'.basename($config['database']);
+    unset($config['teacher_username'],$config['teacher_password_hash']);
     $data="<?php\ndeclare(strict_types=1);\nreturn ".var_export($config,true).";\n";
     $old=umask(0027);
     try{if(file_put_contents($path.'.tmp',$data,LOCK_EX)===false)throw new RuntimeException('Cannot write configuration.');chmod($path.'.tmp',0640);rename($path.'.tmp',$path);}finally{umask($old);}
-    $database=$config['database']??rtrim($config['data_directory'],'/').'/classroom.sqlite';
-    $users=new \Classroom\Users(new \Classroom\Database($database));
-    $users->provisionAdmin($config['teacher_username'],$config['teacher_password_hash']);
-    chmod($database,0660);
-    echo "Administrator account created/updated. Sign in and open Settings to manage users. Configure the Veyon key or logon credentials in config/local.php.\n";
+    echo "Master administrator saved in config/local.php. Sign in and open Settings to manage additional users. Configure the Veyon key or logon credentials in config/local.php.\n";
     if(PHP_OS_FAMILY==='Linux') {
         $install=ask('Create the data directory and install/restart the systemd gateway service using sudo? [Y/n]: ');
         if($install==='' || in_array(strtolower($install),['y','yes'],true)) {

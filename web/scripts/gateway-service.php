@@ -46,7 +46,9 @@ function installGatewayService(array $config, string $configPath, string $accoun
         if (file_put_contents($temporary, $service) === false) throw new RuntimeException('Cannot write service file.');
         $run(['install', '-d', '-o', $account, '-g', $account, '-m', '0750', '--', $dataDirectory]);
         $run(['chown', 'root:' . $account, '--', $configPath]);
-        $run(['chmod', '0640', '--', $configPath]);
+        $run(['chmod', '0660', '--', $configPath]);
+        $run(['chown', 'root:' . $account, '--', dirname($configPath)]);
+        $run(['chmod', '2770', '--', dirname($configPath)]);
         $database=$config['database'] ?? rtrim($config['data_directory'],'/').'/classroom.sqlite';
         foreach([$database,$database.'-wal',$database.'-shm'] as $file)if(is_file($file)){
             $run(['chown',$account.':'.$account,'--',$file]);

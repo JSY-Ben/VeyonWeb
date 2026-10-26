@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn,spawnSync} from 'node:child_process';
-import {mkdtemp,writeFile,rm} from 'node:fs/promises';
+import {mkdtemp,mkdir,writeFile,readFile,chmod,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 import net from 'node:net';
@@ -11,7 +11,7 @@ import {fakeVeyon,privateKey} from './fixture.js';
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function port(){const socket=net.createServer();socket.listen(0,'127.0.0.1');await once(socket,'listening');const value=socket.address().port;await new Promise(resolve=>socket.close(resolve));return value;}
 
-test('users: migration, role boundaries, assigned classrooms, settings, and live-session revocation',{timeout:30000},async()=>{
+test('users: config master, role boundaries, assigned classrooms, settings, and live-session revocation',{timeout:30000},async()=>{
   const dir=await mkdtemp(path.join(tmpdir(),'veyon-users-http-')),children=[],sockets=[];
   const target=await fakeVeyon(),httpPort=await port(),wsPort=await port(),origin=`http://127.0.0.1:${httpPort}`;
   const endpoint=route=>origin+'/api.php?route='+encodeURIComponent(route);let logs='';
@@ -22,16 +22,25 @@ test('users: migration, role boundaries, assigned classrooms, settings, and live
   try{
     const hash=spawnSync('php',['-r',"echo password_hash('original-admin-password', PASSWORD_DEFAULT);"],{encoding:'utf8'}).stdout;
     const keyPath=path.join(dir,'key.pem');await writeFile(keyPath,privateKey,{mode:0o600});
-    const config={origin,teacher_username:'teacher',teacher_password_hash:hash,database:path.join(dir,'data.sqlite'),gateway_listen:`websocket://127.0.0.1:${wsPort}`,websocket_url:`ws://127.0.0.1:${wsPort}/remote`,veyon:{method:'key',username:'teacher',key_name:'teacher',private_key_file:keyPath}};
-    const configPath=path.join(dir,'config.php');await writeFile(configPath,`<?php return json_decode(base64_decode('${Buffer.from(JSON.stringify(config)).toString('base64')}'),true);`);
+    const config={origin,masteradmin_username:'teacher',masteradmin_password_hash:hash,database:path.join(dir,'data.sqlite'),gateway_listen:`websocket://127.0.0.1:${wsPort}`,websocket_url:`ws://127.0.0.1:${wsPort}/remote`,veyon:{method:'key',username:'teacher',key_name:'teacher',private_key_file:keyPath}};
+    const configDirectory=path.join(dir,'config');await mkdir(configDirectory);
+    const configPath=path.join(configDirectory,'local.php');await writeFile(configPath,`<?php return json_decode(base64_decode('${Buffer.from(JSON.stringify(config)).toString('base64')}'),true);`);
     for(const args of [['-S',`127.0.0.1:${httpPort}`,'-t','public','router.php'],['gateway.php','start']]){
       const child=spawn('php',args,{env:{...process.env,CLASSROOM_CONFIG:configPath},stdio:['ignore','pipe','pipe']});children.push(child);child.stdout.on('data',data=>logs+=data);child.stderr.on('data',data=>logs+=data);
     }
     let started=false;for(let i=0;i<80;i++){try{if((await request('','/api/session')).ok){started=true;break;}}catch{}await delay(50);}assert.ok(started,logs);await delay(100);
     await json('','/api/users','GET',undefined,401);
     const admin=await login('teacher','original-admin-password');
-    const session=await json(admin,'/api/session');assert.equal(session.role,'admin');
-    const before=await json(admin,'/api/users');assert.equal(before.users.length,1);assert.equal(before.users[0].role,'admin');assert.ok(!JSON.stringify(before).includes('password_hash'));
+    const seeded=spawnSync('php',['-r',`require $argv[1];$db=new Classroom\\Database($argv[2]);$db->query('CREATE TABLE settings(name TEXT PRIMARY KEY,value TEXT NOT NULL)');$db->query('INSERT INTO settings VALUES (?,?)',['overview_refresh_seconds','37']);`,path.resolve('vendor/autoload.php'),path.join(dir,'data.sqlite')],{encoding:'utf8'});assert.equal(seeded.status,0,seeded.stderr);
+    assert.equal((await json(admin,'/api/computers')).overviewRefreshSeconds,30,'Old SQLite settings must be ignored');
+    const session=await json(admin,'/api/session');assert.equal(session.role,'admin');assert.equal(session.isMaster,true);assert.equal(session.userId,0);
+    const before=await json(admin,'/api/users');assert.equal(before.users.length,0);assert.ok(!JSON.stringify(before).includes('password_hash'));
+    await json(admin,'/api/users','POST',{username:'TEACHER',password:'duplicate-password',role:'admin'},400);
+    // A database account with the same username cannot bypass the config password.
+    const collision=spawnSync('php',['-r',`require $argv[1];$db=new Classroom\\Database($argv[2]);$db->query("INSERT INTO users(username,password_hash,role,enabled,created_at) VALUES (?,?,'admin',1,?)",['teacher',password_hash('shadow-admin-password',PASSWORD_DEFAULT),time()]);echo $db->pdo->lastInsertId();`,path.resolve('vendor/autoload.php'),path.join(dir,'data.sqlite')],{encoding:'utf8'});assert.equal(collision.status,0,collision.stderr);
+    await login('teacher','shadow-admin-password',401);
+    const shadow=(await json(admin,'/api/users')).users.find(user=>user.username==='teacher');assert.equal(shadow.reserved,true);
+    await json(admin,'/api/users','DELETE',{id:Number(collision.stdout)});assert.equal((await json(admin,'/api/session')).isMaster,true);
     const roster=[{id:'a',name:'PC A',host:'127.0.0.1',port:target.port,room:'Room A'},{id:'b',name:'PC B',host:'127.0.0.1',port:target.port,room:'Room B'}];
     await json(admin,'/api/computers','PUT',roster);
     const teacherId=(await json(admin,'/api/users','POST',{username:'restricted',password:'teacher-password',role:'teacher',classrooms:['Room A']})).id;
@@ -74,12 +83,23 @@ test('users: migration, role boundaries, assigned classrooms, settings, and live
     await json(admin,'/api/users','PUT',{id:session.userId,username:'teacher',role:'admin',enabled:false},400);
     await json(admin,'/api/settings','PUT',{overview_refresh_seconds:45,overview_max_connections:2});
     assert.equal((await json(admin,'/api/computers')).overviewRefreshSeconds,45);assert.equal((await json(admin,'/api/settings')).settings.overview_max_connections,2);
+    const saved=await readFile(configPath,'utf8');assert.match(saved,/'overview_refresh_seconds'\s*=>\s*45/);assert.ok(saved.includes(keyPath),'Saving preview settings must preserve the Veyon key path');
+    const savedValues=spawnSync('php',['-r','echo json_encode(require $argv[1]);',configPath],{encoding:'utf8'});assert.equal(savedValues.status,0,savedValues.stderr);assert.equal(JSON.parse(savedValues.stdout).masteradmin_password_hash,hash);
+    if(process.getuid?.()!==0){
+      await chmod(configDirectory,0o500);
+      try{const failed=await json(admin,'/api/settings','PUT',{overview_refresh_seconds:46},500);assert.match(failed.error,/write access|permissions/);assert.equal(await readFile(configPath,'utf8'),saved);}
+      finally{await chmod(configDirectory,0o700);}
+    }
     await json(admin,'/api/settings','PUT',{origin:'https://attacker.example'},400);
     await json(admin,'/api/users','PUT',{id:supervisorId,username:'supervisor',role:'admin'});
     await json(supervisor,'/api/users','GET',undefined,401);const promoted=await login('supervisor','supervisor-password');assert.equal((await json(promoted,'/api/session')).role,'admin');
-    const demoted=await json(admin,'/api/users','PUT',{id:session.userId,username:'teacher',role:'supervisor'});assert.equal(demoted.sessionRevoked,true);
-    await json(admin,'/api/users','GET',undefined,401);
-    const demotedCookie=await login('teacher','original-admin-password');assert.equal((await json(demotedCookie,'/api/session')).role,'supervisor','Legacy config must not restore administrator privileges');
+    await json(admin,'/api/users','DELETE',{id:supervisorId});
+    assert.equal((await json(admin,'/api/session')).isMaster,true);
+    assert.equal((await json(await login('teacher','original-admin-password'),'/api/session')).role,'admin');
+    // Password rotation in local.php invalidates existing master sessions.
+    const rotated=spawnSync('php',['-r',"$p=$argv[1];$c=require $p;$c['masteradmin_password_hash']=password_hash('rotated-admin-password',PASSWORD_DEFAULT);file_put_contents($p,'<?php return '.var_export($c,true).';');",configPath],{encoding:'utf8'});assert.equal(rotated.status,0,rotated.stderr);
+    assert.equal((await json(admin,'/api/session')).authenticated,false);
+    await login('teacher','original-admin-password',401);assert.ok(await login('teacher','rotated-admin-password'));
     assert.doesNotMatch(logs,/Fatal error|Warning:|Deprecated:/);
   }finally{
     for(const socket of sockets)socket.terminate();for(const child of children)child.kill();await Promise.all(children.map(async child=>{if(child.exitCode===null)await once(child,'exit');}));await target.close();await rm(dir,{recursive:true,force:true});

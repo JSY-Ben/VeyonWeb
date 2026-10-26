@@ -30,12 +30,12 @@ try {
     $body = $raw !== '' ? json_decode($raw, true, 64, JSON_THROW_ON_ERROR) : [];
     $db = new Database($config['database']); $db->cleanup();
     $users=new Users($db);
-    if($config['demo']){if(!$users->find('demo'))$users->bootstrap('demo',password_hash(bin2hex(random_bytes(16)),PASSWORD_DEFAULT));}
-    else $users->bootstrap($config['teacher_username'],$config['teacher_password_hash']);
-    $config=Settings::apply($db,$config);
+    if($config['demo']&&!$users->find('demo'))$users->save(['username'=>'demo','password'=>bin2hex(random_bytes(16)),'role'=>'admin']);
+    $master=Users::master();
     $session = $db->session($_COOKIE['classroom'] ?? '');
+    $settingsNotice='';
     $cookieOptions = ['expires' => time() + 28800, 'path' => $config['base_path'] . '/', 'secure' => str_starts_with($config['origin'], 'https://'), 'httponly' => true, 'samesite' => 'Strict'];
-    if ($route === '/api/session' && $method === 'GET') respond(200, $users->publicSession($session)+['demo'=>$config['demo'],'setupRequired'=>!(bool)$db->query('SELECT 1 FROM users LIMIT 1')->fetchColumn()]);
+    if ($route === '/api/session' && $method === 'GET') respond(200, $users->publicSession($session)+['demo'=>$config['demo'],'settingsNotice'=>$settingsNotice,'setupRequired'=>!$master && !(bool)$db->query('SELECT 1 FROM users LIMIT 1')->fetchColumn()]);
     if ($route === '/api/login' && $method === 'POST') {
         $loginName=$config['demo']?'demo':(is_string($body['username']??null)?$body['username']:'');
         // A user's successful login must not reset another account's failures.
@@ -45,13 +45,18 @@ try {
             return (int)$db->query('SELECT count FROM attempts WHERE ip=?', [$ip])->fetchColumn();
         });
         if ($attempt > 10) respond(429, ['error' => 'Too many attempts. Try again in 15 minutes.']);
-        $account=$users->find($loginName);
+        $isMaster=$master && strcasecmp($loginName,$master['username'])===0;
+        $account=$isMaster?$master:$users->find($loginName);
         $dummyHash='$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2uheWG/igi.';
         $valid=$config['demo'] || (is_string($body['password']??null) && strlen($body['password'])<=1024 && password_verify($body['password'],$account['password_hash']??$dummyHash));
         if (!$valid || !$account || !$account['enabled']) respond(401, ['error' => 'Username or password is incorrect.']);
         if ($session) $db->query('DELETE FROM sessions WHERE id=?', [$session['id']]);
         $token = bin2hex(random_bytes(32));
-        $db->query('INSERT INTO sessions VALUES (?,?,?)', [hash('sha256', $token), $account['username'], time()+28800]);
+        $db->transaction(function () use($db,$token,$account,$isMaster): void {
+            $id=hash('sha256',$token);
+            $db->query('INSERT INTO sessions VALUES (?,?,?)',[$id,$account['username'],time()+28800]);
+            if($isMaster)$db->query('INSERT INTO master_sessions VALUES (?,?)',[$id,$account['fingerprint']]);
+        });
         $db->query('DELETE FROM attempts WHERE ip=?', [$ip]);
         setcookie('classroom', $token, $cookieOptions); respond(200, ['ok' => true]);
     }
@@ -74,20 +79,20 @@ try {
                 if(!is_int($body['id']??null))respond(400,['error'=>'Choose a valid user.']);
                 $users->delete($body['id']);respond(200,['ok'=>true,'sessionRevoked'=>$db->sessionById($session['id'])===null]);
             }
-            if($method==='GET')respond(200,['users'=>$users->listing(),'classrooms'=>$db->query('SELECT DISTINCT room FROM computers ORDER BY room')->fetchAll(PDO::FETCH_COLUMN)]);
+            if($method==='GET')respond(200,['masterAdmin'=>$master?['username'=>$master['username']]:null,'users'=>$users->listing(),'classrooms'=>$db->query('SELECT DISTINCT room FROM computers ORDER BY room')->fetchAll(PDO::FETCH_COLUMN)]);
         }else{
             if($method==='PUT'){
                 if(!is_array($body)||array_is_list($body))respond(400,['error'=>'Invalid settings.']);
-                Settings::save($db,$body);$config=Settings::apply($db,$config);
+                Settings::save($body);$config=Config::load();$settingsNotice='';
             }
-            if(in_array($method,['GET','PUT'],true))respond(200,['settings'=>Settings::values($config)]);
+            if(in_array($method,['GET','PUT'],true))respond(200,['settings'=>Settings::values($config),'notice'=>$settingsNotice]);
         }
         respond(405,['error'=>'Method not allowed.']);
     }
     if ($route === '/api/computers' && $method === 'GET') {
         $computers = $db->accessibleRoster($session);
         if ($config['demo']) $computers = array_map(fn($i) => ['id' => "demo-$i", 'name' => 'Studio ' . str_pad((string)$i, 2, '0', STR_PAD_LEFT), 'host' => "studio-$i.school.local", 'port' => 11100, 'room' => $i <= 6 ? 'Design studio' : 'Library'], range(1, 8));
-        respond(200, ['computers' => $computers, 'ready' => $config['demo'] || Config::ready($config), 'demo' => $config['demo'], 'authMethod' => $config['veyon']['method'], 'maxUploadBytes' => $config['max_upload_bytes'], 'overviewRefreshSeconds' => $config['overview_refresh_seconds'], 'overviewStaggerMs' => $config['overview_stagger_ms'], 'connectionTimeoutSeconds' => $config['connection_timeout_seconds'], 'previewTimeoutSeconds' => $config['preview_timeout_seconds'], 'overviewMaxConnections' => $config['overview_max_connections'], 'overviewRetrySeconds' => $config['overview_retry_seconds']]);
+        respond(200, ['computers' => $computers, 'ready' => $config['demo'] || Config::ready($config), 'demo' => $config['demo'], 'settingsNotice'=>$settingsNotice,'authMethod' => $config['veyon']['method'], 'maxUploadBytes' => $config['max_upload_bytes'], 'overviewRefreshSeconds' => $config['overview_refresh_seconds'], 'overviewStaggerMs' => $config['overview_stagger_ms'], 'connectionTimeoutSeconds' => $config['connection_timeout_seconds'], 'previewTimeoutSeconds' => $config['preview_timeout_seconds'], 'overviewMaxConnections' => $config['overview_max_connections'], 'overviewRetrySeconds' => $config['overview_retry_seconds']]);
     }
     if ($route === '/api/computers' && $method === 'PUT') {
         if(!$isAdmin)respond(403,['error'=>'Only administrators can edit computers or classrooms.']);
@@ -137,6 +142,7 @@ try {
     }
     respond(404, ['error' => 'API route not found.']);
 } catch (\JsonException | \InvalidArgumentException $error) { respond(400, ['error' => $error->getMessage()]); }
+catch (\Classroom\ConfigWriteException $error) { respond(500,['error'=>$error->getMessage()]); }
 catch (\Throwable $error) {
     error_log('Veyon API: ' . $error->getMessage());
     if (isset($route) && in_array($route, ['/api/actions', '/api/files'], true) && get_class($error) === \RuntimeException::class) respond(502, ['error' => $error->getMessage()]);

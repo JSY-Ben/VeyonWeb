@@ -15,17 +15,15 @@ final class Users
         if (!is_string($password) || strlen($password)<12 || strlen($password)>72 || str_contains($password,"\0")) throw new \InvalidArgumentException('Passwords must contain 12–72 bytes.');
         return password_hash($password,defined('PASSWORD_ARGON2ID')?PASSWORD_ARGON2ID:PASSWORD_DEFAULT);
     }
-    /** One-time migration: the configured legacy login becomes the first admin. */
-    public function bootstrap(string $username, string $hash): void
+    /** The permanent recovery administrator is stored only in local.php. */
+    public static function master(): ?array
     {
-        if ($hash==='' || $this->db->query('SELECT 1 FROM users LIMIT 1')->fetchColumn()) return;
-        self::username($username);
-        $this->db->transaction(function () use ($username,$hash): void {
-            if ($this->db->query('SELECT 1 FROM users LIMIT 1')->fetchColumn()) return;
-            $this->db->query("INSERT INTO users(username,password_hash,role,enabled,created_at) VALUES (?,?,'admin',1,?)",[$username,$hash,time()]);
-            // Require reauthentication after migrating the old single-user model.
-            $this->db->query('DELETE FROM tickets');$this->db->query('DELETE FROM sessions');
-        });
+        $config=Config::load();
+        $hash=$config['masteradmin_password_hash'];
+        if($config['demo'] || $hash==='' || !password_get_info($hash)['algo'])return null;
+        $username=self::username($config['masteradmin_username']);
+        return ['username'=>$username,'password_hash'=>$hash,'role'=>'admin','enabled'=>true,
+            'fingerprint'=>hash('sha256',$username."\0".$hash)];
     }
     public function find(string $username): ?array
     {
@@ -38,28 +36,30 @@ final class Users
     public function listing(): array
     {
         $users=$this->db->query('SELECT id,username,role,enabled,created_at FROM users ORDER BY username COLLATE NOCASE')->fetchAll();
-        foreach($users as &$user){$user['enabled']=(bool)$user['enabled'];$user['classrooms']=$this->rooms((int)$user['id']);}
+        $master=self::master();
+        foreach($users as &$user){$user['reserved']=$master && strcasecmp($user['username'],$master['username'])===0;$user['enabled']=(bool)$user['enabled'];$user['classrooms']=$this->rooms((int)$user['id']);}
         return $users;
     }
     public function publicSession(?array $session): array
     {
-        return ['authenticated'=>$session!==null,'username'=>$session['username']??null,'userId'=>$session['user_id']??null,'role'=>$session['role']??null,
+        return ['authenticated'=>$session!==null,'username'=>$session['username']??null,'userId'=>$session['user_id']??null,'role'=>$session['role']??null,'isMaster'=>(bool)($session['is_master']??false),
             'classrooms'=>$session?$this->rooms((int)$session['user_id']):[]];
     }
     private function revoke(string $username): void
     {
-        $this->db->query('DELETE FROM tickets WHERE session_id IN (SELECT id FROM sessions WHERE username=? COLLATE NOCASE)',[$username]);
-        $this->db->query('DELETE FROM sessions WHERE username=? COLLATE NOCASE',[$username]);
+        $this->db->query('DELETE FROM tickets WHERE session_id IN (SELECT id FROM sessions WHERE username=? COLLATE NOCASE AND id NOT IN (SELECT session_id FROM master_sessions))',[$username]);
+        $this->db->query('DELETE FROM sessions WHERE username=? COLLATE NOCASE AND id NOT IN (SELECT session_id FROM master_sessions)',[$username]);
     }
     private function protectLastAdmin(array $old, string $role, bool $enabled): void
     {
-        if($old['role']==='admin' && $old['enabled'] && ($role!=='admin'||!$enabled) && (int)$this->db->query("SELECT COUNT(*) FROM users WHERE role='admin' AND enabled=1")->fetchColumn()<=1) throw new \InvalidArgumentException('Keep at least one enabled administrator.');
+        if(!self::master() && $old['role']==='admin' && $old['enabled'] && ($role!=='admin'||!$enabled) && (int)$this->db->query("SELECT COUNT(*) FROM users WHERE role='admin' AND enabled=1")->fetchColumn()<=1) throw new \InvalidArgumentException('Keep at least one enabled administrator.');
     }
     public function save(array $input): int
     {
         $id=$input['id']??null;
         if($id!==null && (!is_int($id)||$id<1)) throw new \InvalidArgumentException('Invalid user ID.');
         $username=self::username($input['username']??null);
+        $master=self::master();if($master && strcasecmp($username,$master['username'])===0)throw new \InvalidArgumentException('This username belongs to the master administrator in local.php.');
         $role=$input['role']??'';$enabled=$input['enabled']??true;$rooms=$input['classrooms']??[];
         if(!in_array($role,['admin','supervisor','teacher'],true)||!is_bool($enabled)) throw new \InvalidArgumentException('Choose a valid role and enabled status.');
         if(!is_array($rooms)||!array_is_list($rooms)||count($rooms)>200) throw new \InvalidArgumentException('Choose valid classrooms.');
@@ -77,7 +77,7 @@ final class Users
             foreach($rooms as $room)if(!$this->db->query('SELECT 1 FROM computers WHERE room=? LIMIT 1',[$room])->fetchColumn())throw new \InvalidArgumentException('Classroom no longer exists: '.$room);
             if(!$old){
                 // Even callers outside the web API cannot create a non-admin first user.
-                $first=!(bool)$this->db->query('SELECT 1 FROM users LIMIT 1')->fetchColumn();
+                $first=!self::master() && !(bool)$this->db->query('SELECT 1 FROM users LIMIT 1')->fetchColumn();
                 $this->db->query('INSERT INTO users(username,password_hash,role,enabled,created_at) VALUES (?,?,?,?,?)',[$username,$hash,$first?'admin':$role,$first?1:(int)$enabled,time()]);
                 $userId=(int)$this->db->pdo->lastInsertId();if($first)$rooms=[];
             }else{
@@ -98,16 +98,6 @@ final class Users
             if(!$user)throw new \InvalidArgumentException('User no longer exists.');
             $this->protectLastAdmin($user,'teacher',false);$this->revoke($user['username']);
             $this->db->query('DELETE FROM users WHERE id=?',[$id]);
-        });
-    }
-    /** Explicit server-side CLI setup/recovery, never exposed as a web route. */
-    public function provisionAdmin(string $username, string $hash): void
-    {
-        self::username($username);
-        $this->db->transaction(function () use ($username,$hash): void {
-            $user=$this->find($username);
-            if($user){$this->db->query("UPDATE users SET password_hash=?,role='admin',enabled=1 WHERE id=?",[$hash,$user['id']]);$this->revoke($user['username']);$this->db->query('DELETE FROM user_classrooms WHERE user_id=?',[$user['id']]);}
-            else $this->db->query("INSERT INTO users(username,password_hash,role,enabled,created_at) VALUES (?,?,'admin',1,?)",[$username,$hash,time()]);
         });
     }
 }

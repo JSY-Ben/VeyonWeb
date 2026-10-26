@@ -1,6 +1,6 @@
 import RFB from './veyon-rfb.js?v=snapshot-pixels-20261026';
-import {setupAdminSettings} from './admin-settings.js?v=users-20261026';
-import {setupClassroomActions} from './classroom-actions.js?v=users-20261026';
+import {setupAdminSettings} from './admin-settings.js?v=masteradmin-20261026';
+import {setupClassroomActions} from './classroom-actions.js?v=masteradmin-20261026';
 import {captureDesktop,SnapshotOverview} from './snapshots.js?v=snapshot-pixels-20261026';
 const appBase = new URL('.', import.meta.url);
 const $ = selector => document.querySelector(selector);
@@ -170,6 +170,7 @@ async function loadClassroom() {
   state.overviewRetrySeconds=data.overviewRetrySeconds??60;
   try{const saved=Number(localStorage.getItem(refreshStorageKey));if(Number.isInteger(saved)&&saved>=2&&saved<=3600)state.overviewRefreshSeconds=saved;}catch{}
   $('#overview-refresh').value=state.overviewRefreshSeconds;
+  $('#settings-notice').textContent=state.canManage?(data.settingsNotice||''):'';$('#settings-notice').hidden=!state.canManage||!data.settingsNotice;
   $('#demo-banner').hidden = !state.demo; $('#network-label').textContent = state.demo ? 'Sample workspace' : 'Local gateway';
   $('.local-badge').innerHTML = `<span class="dot"></span>${state.demo ? 'Sample mode' : 'School network'}`;
   state.monitoring = state.ready || state.demo; render();

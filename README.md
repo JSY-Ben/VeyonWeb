@@ -94,7 +94,8 @@ If you change `data_directory` later, rerun setup to regenerate the service, or 
 
 ### Users, roles and web settings
 
-The first account is an **admin**. For existing installations, the configured `teacher_username` and `teacher_password_hash` are migrated once into an admin account, preserving the username and password. Existing browser sessions are cleared during migration; sign in again with that account. After migration, users and password changes live in SQLite. Changing the old config login fields does not override database users or restore deleted/demoted accounts.
+The permanent **master administrator** is stored in `config/local.php` as `masteradmin_username` and `masteradmin_password_hash`. It always has full access and remains available independently of database users. Run `php scripts/setup.php` to create or reset this backup account. Additional admins, supervisors and teachers are managed in Settings and stored in SQLite. The master account cannot be edited or deleted through Settings; its username is reserved. Changing its config credentials invalidates its existing sessions. Rename the previous top-level `teacher_username` and `teacher_password_hash` keys to the new names when upgrading (leave the nested Veyon credentials unchanged). No config account is copied into SQLite.
+
 
 | Role | Classroom access | Allowed actions |
 | --- | --- | --- |
@@ -104,13 +105,27 @@ The first account is an **admin**. For existing installations, the configured `t
 
 Admins open **Settings** in the sidebar to create accounts, choose roles, assign teacher classrooms, disable/delete users and reset passwords. Usernames are unique without regard to case and cannot be renamed. New passwords require 12–72 bytes. A teacher with no assignments sees no computers. Assignments use the current classroom names: deleting or renaming a classroom removes its old grants, so assign the new classroom explicitly.
 
-Permissions are enforced in the API, ticket consumption and gateway session checks, not just by hiding controls. Changing a user's password, role, enabled status or classroom assignments ends that user's existing sessions and invalidates pending tickets. Active gateway connections close on the next check (normally within one second). The last enabled admin cannot be deleted, disabled or demoted. These website roles are independent of the shared Veyon credentials configured for the gateway.
+Permissions are enforced in the API, ticket consumption and gateway session checks, not just by hiding controls. Changing a user's password, role, enabled status or classroom assignments ends that user's existing sessions and invalidates pending tickets. Active gateway connections close on the next check (normally within one second). Without a configured master administrator, the last enabled database admin cannot be deleted, disabled or demoted. These website roles are independent of the shared Veyon credentials configured for the gateway.
 
-The same **Settings** page manages preview concurrency, spacing, refresh/retry intervals and connection timeouts. These settings are stored in SQLite and override `local.php` defaults. New gateway connections read them immediately; each browser picks up changes when its classroom is reloaded. Per-browser refresh-interval overrides still take precedence. Server credentials, site origin and routing remain in `local.php`/server configuration.
+The same **Settings** page manages preview concurrency, spacing, refresh/retry intervals and connection timeouts. Saving these settings updates the actual entries in `web/config/local.php` (or the file selected by `CLASSROOM_CONFIG`); no separate SQLite overrides are used. New gateway connections reread the file immediately; each browser picks up changes when its classroom is reloaded. Per-browser refresh-interval overrides still take precedence. Server credentials, site origin and routing remain in `local.php`/server configuration.
 
-For account recovery, run `php scripts/setup.php` on the server. It explicitly creates or resets the chosen account as an enabled admin. It is a server-side CLI operation; there is no unauthenticated web registration or password-reset endpoint. If service installation is declined, ensure the web process and gateway can write the database and its directory.
+The web server needs write access to the **configuration directory** because saves use a lock and an atomic file replacement. Setup's service-install step sets the directory to `root:www-data` with mode `2770`, and `local.php` to `0660` (substitute your service group). For an existing installation, adjust those permissions once, for example:
 
-**Upgrading:** back up the SQLite database and local config, stop `veyon-gateway`, deploy the updated PHP and browser files together, reload the PHP web handler if it caches deployed code, then restart `veyon-gateway`. The schema migrates automatically. Restarting the gateway is required so existing worker processes use the new authorization checks. Sign in with the previous login (now admin), then create the other users. Include the new `admin-settings.js` browser module in deployment.
+```sh
+sudo chown root:www-data /var/www/html/VeyonWeb/web/config
+sudo chmod 2770 /var/www/html/VeyonWeb/web/config
+sudo chgrp www-data /var/www/html/VeyonWeb/web/config/local.php
+sudo chmod 0660 /var/www/html/VeyonWeb/web/config/local.php
+```
+
+Use your actual installation path. The configuration remains outside `web/public`. Normal array configurations retain comments, relative-path expressions and unrelated fields; computed configuration files are normalized to an explicit PHP array with their evaluated values preserved. A failed save leaves the old configuration intact and reports a permissions/error message. There is no database fallback.
+
+Preview and connection settings use only `local.php`. Old SQLite settings are ignored and are not migrated. Users, roles, classroom assignments and sessions remain in SQLite. Deploy the PHP and browser changes together and restart the gateway.
+
+
+For account recovery, run `php scripts/setup.php` on the server. It creates or resets the master administrator credentials in `local.php`, without changing database users. It is a server-side CLI operation; there is no unauthenticated web registration or password-reset endpoint. If service installation is declined, ensure the web process and gateway can write the database and its directory.
+
+**Upgrading:** back up the SQLite database and local config, stop `veyon-gateway`, deploy the updated PHP and browser files together, reload the PHP web handler if it caches deployed code, then restart `veyon-gateway`. The schema migrates automatically. Restarting the gateway is required so existing worker processes use the new authorization checks. Sign in with the configured master administrator, then create the other users. Include the new `admin-settings.js` browser module in deployment.
 
 ### Classroom actions
 
