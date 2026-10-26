@@ -1,0 +1,17 @@
+{
+  "name": "veyonweb",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.js",
+    "test": "php test/php-unit.php && node --test test/php-integration.test.js"
+  },
+  "license": "GPL-2.0-or-later",
+  "description": "Optional browser asset build and integration test tools; PHP runs the application",
+  "devDependencies": {
+    "@novnc/novnc": "1.6.0",
+    "esbuild": "^0.28.2",
+    "ws": "^8.22.0"
+  }
+}

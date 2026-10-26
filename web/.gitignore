@@ -1,0 +1,6 @@
+node_modules/
+vendor/
+config/local.php
+data/*
+!data/example.json
+*.pem

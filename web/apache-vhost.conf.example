@@ -1,0 +1,39 @@
+# Apache 2.4.47+ with PHP 8.2+ via mod_php.
+# Modules: mod_php, ssl, rewrite, headers, proxy, proxy_http.
+# Replace hostname and certificate paths for your server.
+<VirtualHost *:80>
+    ServerName classroom.school.example
+    Redirect permanent / https://classroom.school.example/
+</VirtualHost>
+
+<VirtualHost *:443>
+    ServerName classroom.school.example
+    DocumentRoot /var/www/html/VeyonWeb/web/public
+    SSLEngine on
+    SSLCertificateFile /etc/ssl/classroom/fullchain.pem
+    SSLCertificateKeyFile /etc/ssl/classroom/privkey.pem
+
+    <Directory /var/www/html/VeyonWeb/web/public>
+        Options -Indexes -MultiViews
+        AllowOverride None
+        Require all granted
+        DirectoryIndex index.html
+        RewriteEngine On
+        RewriteRule ^api(?:/.*)?$ api.php [END]
+    </Directory>
+
+    # Only remote-desktop WebSockets are proxied. Apache/PHP serves everything else.
+    ProxyRequests Off
+    ProxyPreserveHost On
+    ProxyPass        "/remote" "http://127.0.0.1:9001/remote" upgrade=websocket timeout=3600
+    ProxyPassReverse "/remote" "http://127.0.0.1:9001/remote"
+
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set Referrer-Policy "no-referrer"
+    Header always set Cache-Control "no-store"
+    Header always set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+
+    # %U omits query strings, including short-lived remote session tickets.
+    ErrorLog ${APACHE_LOG_DIR}/veyonweb-error.log
+    CustomLog ${APACHE_LOG_DIR}/veyonweb-access.log "%h %l %u %t \"%m %U %H\" %>s %b"
+</VirtualHost>

@@ -1,0 +1,8 @@
+.DS_Store
+web/node_modules/
+web/.env
+web/config/local.php
+web/vendor/
+web/data/*
+!web/data/example.json
+web/public/rfb.js.LEGAL.txt

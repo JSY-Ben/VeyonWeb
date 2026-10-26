@@ -1,0 +1,18 @@
+{
+  "name": "community/veyonweb",
+  "description": "Apache/PHP teacher console and Veyon WebSocket gateway",
+  "type": "project",
+  "license": "GPL-2.0-or-later",
+  "require": {
+    "php": "^8.2",
+    "ext-openssl": "*",
+    "ext-pdo": "*",
+    "ext-pdo_sqlite": "*",
+    "ext-iconv": "*",
+    "ext-pcntl": "*",
+    "ext-posix": "*",
+    "workerman/workerman": "^5.1"
+  },
+  "autoload": { "psr-4": { "Classroom\\": "php/" } },
+  "scripts": { "test": "php test/php-unit.php" }
+}

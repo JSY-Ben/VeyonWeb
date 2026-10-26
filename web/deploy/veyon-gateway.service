@@ -1,0 +1,23 @@
+[Unit]
+Description=VeyonWeb PHP WebSocket gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/html/VeyonWeb/web
+ExecStart=/usr/bin/php /var/www/html/VeyonWeb/web/gateway.php start
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=20
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/www/html/VeyonWeb/web/data
+
+[Install]
+WantedBy=multi-user.target
