@@ -1,6 +1,6 @@
-import RFB from './veyon-rfb.js?v=snapshot-frame-20261026';
-import {setupClassroomActions} from './classroom-actions.js?v=snapshot-pool-20261026';
-import {captureDesktop,SnapshotOverview} from './snapshots.js?v=snapshot-pool-20261026';
+import RFB from './veyon-rfb.js?v=snapshot-pixels-20261026';
+import {setupClassroomActions} from './classroom-actions.js?v=snapshot-pixels-20261026';
+import {captureDesktop,SnapshotOverview} from './snapshots.js?v=snapshot-pixels-20261026';
 const appBase = new URL('.', import.meta.url);
 const $ = selector => document.querySelector(selector);
 const icons = {
@@ -141,13 +141,19 @@ function connectOverview(computers) {
       try{return await new Promise((resolve,reject)=>staging.querySelector('canvas').toBlob(blob=>blob?resolve(blob):reject(new Error('Sample snapshot unavailable.')),'image/png'));}
       finally{demo.disconnect();staging.remove();}
     },
-    onSnapshot:(computer,blob)=>{
+    onSnapshot:async(computer,blob,signal)=>{
       const target=document.getElementById(`screen-${computer.id}`);if(!target)return;
       const previous=snapshotURLs.get(computer.id),url=URL.createObjectURL(blob),image=document.createElement('img');
-      image.className='snapshot-image';image.alt=`Desktop snapshot of ${computer.name}`;image.src=url;target.replaceChildren(image);snapshotURLs.set(computer.id,url);if(previous)URL.revokeObjectURL(previous);
-      const updated=new Date(),tag=target.closest('.computer-card').querySelector('.screen-tag');
-      tag.textContent=`${state.demo?'Sample · ':''}Updated ${updated.toLocaleTimeString()}`;tag.title=updated.toLocaleString();
-      setStatus(computer.id,'connected',`Last snapshot: ${updated.toLocaleString()}`);
+      image.className='snapshot-image';image.alt=`Desktop snapshot of ${computer.name}`;image.src=url;
+      try{
+        await image.decode();
+        if(!image.naturalWidth||!image.naturalHeight)throw new Error('The captured preview image is empty.');
+        if(signal.aborted||!target.isConnected){URL.revokeObjectURL(url);return;}
+        target.replaceChildren(image);snapshotURLs.set(computer.id,url);if(previous)URL.revokeObjectURL(previous);
+        const updated=new Date(),tag=target.closest('.computer-card').querySelector('.screen-tag');
+        tag.textContent=`${state.demo?'Sample · ':''}Updated ${updated.toLocaleTimeString()}`;tag.title=updated.toLocaleString();
+        setStatus(computer.id,'connected',`Last snapshot: ${updated.toLocaleString()}`);
+      }catch(error){URL.revokeObjectURL(url);throw new Error('Could not display the captured preview. '+error.message);}
     },
     onError:(computer,error)=>setStatus(computer.id,'error',error.message+(snapshotURLs.has(computer.id)?' Showing the last successful picture.':'')),
   });

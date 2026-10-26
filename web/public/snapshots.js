@@ -78,7 +78,7 @@ export class SnapshotOverview {
       // Defer invocation so even a synchronous capture failure cannot recurse
       // into the scheduler while it is filling the pool.
       const blob=await Promise.resolve().then(()=>signal.aborted?undefined:this.capture(entry.computer,signal));
-      if(!signal.aborted){entry.due=this.now()+this.interval;this.onSnapshot(entry.computer,blob);}
+      if(!signal.aborted){await this.onSnapshot(entry.computer,blob,signal);entry.due=this.now()+this.interval;}
     }catch(error){
       if(!signal.aborted){
         entry.due=this.now()+this.retry;

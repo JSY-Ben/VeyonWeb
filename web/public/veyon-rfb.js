@@ -1,9 +1,18 @@
 import RFB from './rfb.js';
 
 export default class VeyonRFB extends RFB {
+  _handleDataRect() {
+    const complete = super._handleDataRect();
+    // Cursor/size/desktop-name notifications are not screenshots. CopyRect
+    // only moves existing pixels and cannot supply an initial desktop image.
+    if (complete && this._FBU.width > 0 && this._FBU.height > 0 && this._FBU.encoding !== 1) this._frameHasPixels = true;
+    return complete;
+  }
+
   _framebufferUpdate() {
     const complete = super._framebufferUpdate();
-    if (complete && this._FBU.rects === 0) {
+    if (complete && this._FBU.rects === 0 && this._frameHasPixels) {
+      this._frameHasPixels = false;
       this._display.flush().then(() => {
         this.hasFrame = true;
         this.dispatchEvent(new CustomEvent('framebufferupdate'));

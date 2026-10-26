@@ -10,16 +10,26 @@ test('browser bundle loads without CommonJS globals', async () => {
   try {
     const {default:RFB}=await import('../public/veyon-rfb.js');
     assert.equal(typeof RFB,'function');
-    const base=Object.getPrototypeOf(RFB.prototype),originalFrame=base._framebufferUpdate;
-    const snapshot=Object.create(RFB.prototype);let flushed=false,notified=false;
-    snapshot._FBU={rects:0};snapshot._display={flush:async()=>{flushed=true;}};
+    // Exercise noVNC's actual framebuffer parser: Veyon may send a metadata
+    // update before the rectangle containing the desktop pixels.
+    const rawModule=await import('@novnc/novnc/lib/decoders/raw.js');
+    const RawDecoder=rawModule.default.default;
+    const snapshot=Object.create(RFB.prototype);let queue=Buffer.alloc(0),offset=0,notified=false,flushed=false,pixels;
+    snapshot._FBU={rects:0,encoding:null};snapshot._fbDepth=24;snapshot._decoders={0:new RawDecoder()};
+    snapshot._sock={rQwait:(_name,n,back=0)=>{if(queue.length-offset<n){offset-=back;return true;}return false;},
+      rQskipBytes:n=>{offset+=n;},rQshift16:()=>{const value=queue.readUInt16BE(offset);offset+=2;return value;},
+      rQshift32:()=>{const value=queue.readUInt32BE(offset);offset+=4;return value;},
+      rQshiftBytes:n=>{const value=queue.subarray(offset,offset+n);offset+=n;return value;}};
+    snapshot._display={pending:()=>false,flip(){},flush:async()=>{flushed=true;},blitImage:(_x,_y,_w,_h,data)=>{pixels=Array.from(data);}};
+    snapshot._fail=message=>{throw new Error(message);};
     snapshot.dispatchEvent=event=>{assert.equal(event.type,'framebufferupdate');assert.ok(flushed);notified=true;};
-    try{
-      base._framebufferUpdate=()=>true;
-      assert.equal(snapshot._framebufferUpdate(),true);
-      assert.equal(notified,false,'frame notification waits for display flush');
-      await Promise.resolve();assert.equal(snapshot.hasFrame,true);assert.ok(notified);
-    }finally{base._framebufferUpdate=originalFrame;}
+    function framebuffer(encoding,body=Buffer.alloc(0),width=0,height=0){const header=Buffer.alloc(15);header.writeUInt16BE(1,1);header.writeUInt16BE(width,7);header.writeUInt16BE(height,9);header.writeInt32BE(encoding,11);return Buffer.concat([header,body]);}
+    queue=framebuffer(-224); // LastRect pseudo-encoding; no desktop image.
+    assert.equal(snapshot._framebufferUpdate(),true);await Promise.resolve();
+    assert.equal(snapshot.hasFrame,undefined,'metadata alone cannot complete a screenshot');assert.equal(notified,false);assert.equal(flushed,false);
+    queue=framebuffer(0,Buffer.from([255,0,0,0]),1,1);offset=0;
+    assert.equal(snapshot._framebufferUpdate(),true);assert.equal(notified,false,'wait for decoded pixels to flush');
+    await Promise.resolve();assert.equal(snapshot.hasFrame,true);assert.ok(notified);assert.deepEqual(pixels,[255,0,0,255]);
     // Simulate every split in a feature event followed by another server message.
     const feature=Buffer.from([41,0,0,0,4,0,41,255,1]);
     for(let split=1;split<feature.length;split++) {
