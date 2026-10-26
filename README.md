@@ -92,9 +92,9 @@ Restart the gateway after changing its configuration: `sudo systemctl restart ve
 The gateway starts **4 persistent worker processes** by default. Each worker
 handles multiple connections asynchronously and opens its own SQLite connection
 after it starts. Configure `'gateway_workers' => 4` in `web/config/local.php`
-(integer 1–16), then restart `veyon-gateway` to apply it. Set it to 1 to compare
-against the previous single-worker behaviour. This setting is not exposed in the
-web Settings dialog.
+(integer 1–16), or use **Settings → Connections → Gateway processes**. Save,
+then restart `veyon-gateway` on the server to apply the process count. Set it to
+1 to compare against the previous single-worker behaviour.
 
 Connection quotas are conservatively divided between workers: with four workers,
 each permits 32 connections total and 16 per signed-in session. Aggregate limits

@@ -23,13 +23,15 @@ return [
 ];
 PHP;
     file_put_contents($path,$source);chmod($path,0640);
-    Settings::save(['overview_refresh_seconds'=>45,'overview_max_connections'=>2]);
+    Settings::save(['overview_refresh_seconds'=>45,'overview_max_connections'=>2,'gateway_workers'=>8]);
     $raw=require $path;$saved=file_get_contents($path);
     verify($raw['overview_refresh_seconds']===45&&$raw['overview_max_connections']===2,'Settings not written to the config.');
     verify($raw['veyon']===['password'=>'fake-secret-$value','overview_refresh_seconds'=>999],'Nested credentials changed.');
     verify($raw['base_path']===null&&str_contains($saved,"__DIR__ . '/data'")&&str_contains($saved,'Keep this inline comment.'),'Paths or comments changed.');
     verify((fileperms($path)&0007)===0,'Config permissions expose the file to other users.');
     verify(Config::load()['overview_refresh_seconds']===45,'Config reload did not see the saved value.');
+    verify(Settings::values(Config::load())['gateway_workers']===8,'Gateway process count was not saved and exposed in Settings.');
+    foreach([0,17,4.5,'4',null] as $invalid)refuses(fn()=>Settings::save(['gateway_workers'=>$invalid]));
     $before=file_get_contents($path);refuses(fn()=>Settings::save(['origin'=>'https://other.example']));refuses(fn()=>Settings::save(['overview_max_connections'=>0]));verify(file_get_contents($path)===$before,'Rejected settings changed the config.');
     foreach(["<?php return array('overview_refresh_seconds'=>30, 'other'=>['x'=>1]);",'<?php return [];',"<?php return ['overview_refresh_seconds'=>30 /* comment without trailing comma */];",'<?php return (json_decode(\'{"origin":"https://example.com","base_path":null,"veyon":{"password":"keep"}}\',true));'] as $fixture){
         file_put_contents($path,$fixture);Settings::save(['overview_refresh_seconds'=>60,'overview_max_connections'=>4]);$raw=require $path;

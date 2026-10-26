@@ -1,7 +1,7 @@
 import {applyAppearance,defaultAppearance} from './appearance.js?v=appearance-20261026';
 const $=selector=>document.querySelector(selector);
-const labels={overview_refresh_seconds:'Default refresh interval (seconds)',overview_max_connections:'Maximum simultaneous previews',overview_stagger_ms:'Gap between starts (milliseconds)',overview_retry_seconds:'Retry unavailable PCs (seconds)',connection_timeout_seconds:'Gateway TCP timeout (seconds)',preview_timeout_seconds:'Preview / authentication timeout (seconds)'};
-const ranges={overview_refresh_seconds:[2,3600],overview_max_connections:[1,10],overview_stagger_ms:[0,10000],overview_retry_seconds:[2,3600],connection_timeout_seconds:[1,120],preview_timeout_seconds:[1,120]};
+const labels={gateway_workers:'Gateway processes (restart gateway to apply)',overview_refresh_seconds:'Default refresh interval (seconds)',overview_max_connections:'Maximum simultaneous previews',overview_stagger_ms:'Gap between starts (milliseconds)',overview_retry_seconds:'Retry unavailable PCs (seconds)',connection_timeout_seconds:'Gateway TCP timeout (seconds)',preview_timeout_seconds:'Preview / authentication timeout (seconds)'};
+const ranges={gateway_workers:[1,16],overview_refresh_seconds:[2,3600],overview_max_connections:[1,10],overview_stagger_ms:[0,10000],overview_retry_seconds:[2,3600],connection_timeout_seconds:[1,120],preview_timeout_seconds:[1,120]};
 
 export function setupAdminSettings({state,api,escapeHTML,onSessionRevoked,onSettingsChanged}){
   const dialog=$('#settings-dialog'),form=$('#user-form');let users=[],rooms=[],editing=null,appearance={...defaultAppearance};
@@ -69,7 +69,7 @@ export function setupAdminSettings({state,api,escapeHTML,onSessionRevoked,onSett
   $('#web-settings-form').onsubmit=async event=>{
     event.preventDefault();const button=$('#web-settings-save');button.disabled=true;$('#settings-error').textContent='';$('#settings-saved').textContent='';
     const values=Object.fromEntries([...new FormData(event.target)].map(([key,value])=>[key,Number(value)]));
-    try{await api('/api/settings',{method:'PUT',body:JSON.stringify(values)});await onSettingsChanged();$('#settings-saved').textContent='Saved to local.php. New connections use these settings.';}
+    try{await api('/api/settings',{method:'PUT',body:JSON.stringify(values)});await onSettingsChanged();$('#settings-saved').textContent='Settings saved. Connection settings apply to new connections. If you changed Gateway processes, restart veyon-gateway on the server to apply the process count.';}
     catch(error){$('#settings-error').textContent=error.message;}finally{button.disabled=false;}
   };
   document.querySelectorAll('[data-settings-tab]').forEach(button=>button.onclick=()=>{
