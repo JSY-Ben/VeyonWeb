@@ -52,7 +52,7 @@ try {
     if ($route === '/api/computers' && $method === 'GET') {
         $computers = $db->roster();
         if ($config['demo']) $computers = array_map(fn($i) => ['id' => "demo-$i", 'name' => 'Studio ' . str_pad((string)$i, 2, '0', STR_PAD_LEFT), 'host' => "studio-$i.school.local", 'port' => 11100, 'room' => $i <= 6 ? 'Design studio' : 'Library'], range(1, 8));
-        respond(200, ['computers' => $computers, 'ready' => $config['demo'] || Config::ready($config), 'demo' => $config['demo'], 'authMethod' => $config['veyon']['method'], 'maxUploadBytes' => $config['max_upload_bytes'], 'overviewRefreshSeconds' => $config['overview_refresh_seconds'], 'overviewStaggerMs' => $config['overview_stagger_ms']]);
+        respond(200, ['computers' => $computers, 'ready' => $config['demo'] || Config::ready($config), 'demo' => $config['demo'], 'authMethod' => $config['veyon']['method'], 'maxUploadBytes' => $config['max_upload_bytes'], 'overviewRefreshSeconds' => $config['overview_refresh_seconds'], 'overviewStaggerMs' => $config['overview_stagger_ms'], 'connectionTimeoutSeconds' => $config['connection_timeout_seconds']]);
     }
     if ($route === '/api/computers' && $method === 'PUT') {
         if ($config['demo']) respond(403, ['error' => 'The sample classroom cannot be edited. Start the live server to add your computers.']);
@@ -74,14 +74,14 @@ try {
             if (!is_array($file) || ($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || !is_string($file['tmp_name'] ?? null) || !is_uploaded_file($file['tmp_name'])) respond(400, ['error' => 'Upload failed. Check PHP upload_max_filesize and post_max_size.']);
             if ($file['size'] > $config['max_upload_bytes']) respond(413, ['error' => 'File exceeds the configured upload limit.']);
             Features::filename($file['name']);
-            $client = new FeatureClient($computer, $config['veyon']);
+            $client = new FeatureClient($computer, $config['veyon'], $config['connection_timeout_seconds']);
             try { Features::distribute($client, $file['tmp_name'], $file['name'], ($input['overwrite'] ?? '') === '1', ($input['open'] ?? '') === '1'); }
             finally { $client->close(); }
             respond(200, ['status' => 'sent', 'message' => 'File sent to Veyon’s configured destination. Veyon does not acknowledge that the file was saved; check the target PC.']);
         }
         if (!is_string($input['action'] ?? null)) respond(400, ['error' => 'Choose a classroom action.']);
         $command = Features::command($input['action'], $input);
-        $client = new FeatureClient($computer, $config['veyon']);
+        $client = new FeatureClient($computer, $config['veyon'], $config['connection_timeout_seconds']);
         try { $client->send($command); } finally { $client->close(); }
         respond(200, ['status' => 'sent', 'message' => 'Command sent to Veyon. Execution depends on client permissions and the active user session.']);
     }

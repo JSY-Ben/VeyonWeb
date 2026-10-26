@@ -15,7 +15,7 @@ async function port(){const server=net.createServer();server.listen(0,'127.0.0.1
 const apache=process.env.APACHE_HTTPD && process.env.PHP_FPM;
 for(const method of ['key','logon'])test(`${apache?'Apache/PHP-FPM':'PHP HTTP'} + PHP gateway: ${method}, screens, input, read-only, ticket replay and logout`,{timeout:20000},async()=>{
   const dir=await mkdtemp(path.join(tmpdir(),'veyon-php-integration-')),input=[],sockets=[],children=[];
-  const fake=await fakeVeyon({method,greeting:method==='key'?'RFB 003.008\0':'RFB 003.008\n',onInput:data=>input.push(data)}),httpPort=await port(),wsPort=await port(),origin=`http://127.0.0.1:${httpPort}`;
+  const fake=await fakeVeyon({method,greeting:method==='key'?'RFB 003.008\0':'RFB 003.008\n',onInput:data=>input.push(data)}),silent=await fakeVeyon({greeting:''}),httpPort=await port(),wsPort=await port(),origin=`http://127.0.0.1:${httpPort}`;
   let logs='',cookie='';
   async function request(route,verb='GET',body,requestOrigin=origin){return fetch(origin+route,{method:verb,headers:{Origin:requestOrigin,Cookie:cookie,'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});}
   async function open(mode){
@@ -53,7 +53,8 @@ for(const method of ['key','logon'])test(`${apache?'Apache/PHP-FPM':'PHP HTTP'} 
     assert.equal((await request('/api/login','POST',{username:'teacher',password:'integration-password'},'https://attacker.example')).status,403);
     assert.equal((await request('/api/login','POST',{username:'teacher',password:'wrong'})).status,401);
     const response=await request('/api/login','POST',{username:'teacher',password:'integration-password'});assert.equal(response.status,200);cookie=response.headers.get('set-cookie').split(';')[0];assert.match(response.headers.get('set-cookie'),/HttpOnly/i);assert.match(response.headers.get('set-cookie'),/SameSite=Strict/i);
-    assert.equal((await request('/api/computers','PUT',[{id:'lab',name:'Lab',host:'127.0.0.1',port:fake.port,room:'Lab'}])).status,200);
+    assert.equal((await request('/api/computers','PUT',[{id:'lab',name:'Lab',host:'127.0.0.1',port:fake.port,room:'Lab'},{id:'slow',name:'Unresponsive',host:'127.0.0.1',port:silent.port,room:'Lab'}])).status,200);
+    assert.equal((await (await request('/api/computers')).json()).connectionTimeoutSeconds,2);
     // HTTP actions authenticate independently and preserve Veyon's Qt types.
     assert.equal((await request('/api/actions','POST',{computerId:'lab',action:'reboot'})).status,400);
     assert.equal((await request('/api/actions','POST',{computerId:'missing',action:'lock'})).status,404);
@@ -84,6 +85,12 @@ for(const method of ['key','logon'])test(`${apache?'Apache/PHP-FPM':'PHP HTTP'} 
     assert.ok(fileFrames.every(f=>f[0]==='4a70bd5a-fab2-4a4b-a92a-a1e81d2b75ed'&&f[2]['0']===transferId));
     assert.deepEqual(Buffer.concat(fileFrames.slice(1,-1).map(f=>f[2]['2'])),fileBytes);
     assert.deepEqual(fileFrames.at(-1)[2],{'0':transferId,'1':'lesson.txt','3':true});input.length=0;
+    const actionStarted=Date.now(),timedOut=await request('/api/actions','POST',{computerId:'slow',action:'lock'});
+    assert.equal(timedOut.status,502);assert.ok(Date.now()-actionStarted<5000,'HTTP action connection deadline');
+    const slowTicket=await (await request('/api/tickets','POST',{computerId:'slow',mode:'view'})).json();
+    const slowSocket=new WebSocket(new URL(slowTicket.path,origin.replace('http','ws')),{headers:{Origin:origin,Cookie:cookie}});sockets.push(slowSocket);slowSocket.on('error',()=>{});
+    const gatewayStarted=Date.now(),[closeCode,closeReason]=await once(slowSocket,'close');
+    assert.equal(closeCode,1011);assert.match(closeReason.toString(),/timed out/i);assert.ok(Date.now()-gatewayStarted<5000,'Gateway connection deadline');
     const readonly=await open('view'),key=Buffer.from([4,1,0,0,0,0,0,65]),pointer=Buffer.from([5,1,0,10,0,20]),update=Buffer.from([3,0,0,0,0,0,0,2,0,2]);
     readonly.ws.send(Buffer.concat([key,pointer,update]));await delay(80);assert.deepEqual(Buffer.concat(input),update);input.length=0;
     const frame=Buffer.alloc(32);frame.writeUInt16BE(1,2);frame.writeUInt16BE(2,8);frame.writeUInt16BE(2,10);frame.fill(255,16);fake.sendFrame(frame);assert.deepEqual(await readonly.next(),frame);
@@ -95,5 +102,5 @@ for(const method of ['key','logon'])test(`${apache?'Apache/PHP-FPM':'PHP HTTP'} 
     assert.equal((await request('/api/computers')).status,401);assert.deepEqual(fake.errors,[]);
     assert.equal((await request('/api/actions','POST',{computerId:'lab',action:'lock'})).status,401);
     assert.doesNotMatch(logs, /Fatal error|Warning:|Deprecated:/);
-  }finally{for(const ws of sockets)ws.terminate();for(const child of children)child.kill('SIGTERM');await Promise.all(children.map(async child=>{if(child.exitCode===null)await once(child,'exit');}));await fake.close();await rm(dir,{recursive:true,force:true});}
+  }finally{for(const ws of sockets)ws.terminate();for(const child of children)child.kill('SIGTERM');await Promise.all(children.map(async child=>{if(child.exitCode===null)await once(child,'exit');}));await fake.close();await silent.close();await rm(dir,{recursive:true,force:true});}
 });

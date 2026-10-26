@@ -54,7 +54,7 @@ $worker->onWebSocketConnect = function (TcpConnection $connection,Request $reque
 };
 $worker->onWebSocketConnected = function (TcpConnection $connection) use (&$bridges,&$authorizations,$config): void {
     if (!isset($authorizations[$connection->id])) return;
-    try { $bridges[$connection->id] = new Bridge($connection,$authorizations[$connection->id],$config['veyon']); }
+    try { $bridges[$connection->id] = new Bridge($connection,$authorizations[$connection->id],$config['veyon'],$config['connection_timeout_seconds']); }
     catch (\Throwable $error) { $connection->close(); }
 };
 $worker->onMessage = function (TcpConnection $connection,string $bytes) use (&$bridges): void {

@@ -1,4 +1,4 @@
-export function waitForFrame(rfb, {signal, timeout = 20000} = {}) {
+export function waitForFrame(rfb, {signal, timeout = 2000} = {}) {
   if (signal?.aborted) return Promise.reject(new DOMException('Snapshot cancelled.', 'AbortError'));
   if (rfb.hasFrame) return Promise.resolve();
   return new Promise((resolve,reject)=>{
@@ -14,19 +14,28 @@ export function waitForFrame(rfb, {signal, timeout = 20000} = {}) {
   });
 }
 
-export async function captureDesktop(computer, makeRFB, {signal} = {}) {
+export async function captureDesktop(computer, makeRFB, {signal, timeout=2000} = {}) {
   if(signal?.aborted)throw new DOMException('Snapshot cancelled.','AbortError');
   const staging=document.createElement('div');staging.className='screenshot-staging';document.body.append(staging);
-  let rfb;
-  const cancel=()=>{rfb?.disconnect();staging.remove();};
-  signal?.addEventListener('abort',cancel,{once:true});
-  try{
-    rfb=await makeRFB(computer,staging,'view');
-    await waitForFrame(rfb,{signal});
-    const blob=await new Promise((resolve,reject)=>rfb.toBlob(image=>image?resolve(image):reject(new Error('Snapshot unavailable.')),'image/png'));
-    if(signal?.aborted)throw new DOMException('Snapshot cancelled.','AbortError');
-    return blob;
-  } finally {signal?.removeEventListener('abort',cancel);rfb?.disconnect();staging.remove();}
+  const controller=new AbortController();let rfb,disconnected=false,timedOut=false;
+  const cleanup=()=>{if(rfb&&!disconnected){disconnected=true;rfb.disconnect();}staging.remove();};
+  const cancel=()=>controller.abort();signal?.addEventListener('abort',cancel,{once:true});
+  let onAbort;
+  const cancelled=new Promise((resolve,reject)=>{
+    onAbort=()=>{cleanup();reject(timedOut?new Error(`Connection timed out after ${timeout/1000} seconds.`):new DOMException('Snapshot cancelled.','AbortError'));};
+    controller.signal.addEventListener('abort',onAbort,{once:true});
+  });
+  const timer=setTimeout(()=>{timedOut=true;controller.abort();},timeout);
+  const capture=async()=>{
+    try{
+      rfb=await makeRFB(computer,staging,'view',{signal:controller.signal});
+      await waitForFrame(rfb,{signal:controller.signal,timeout});
+      const blob=await new Promise((resolve,reject)=>rfb.toBlob(image=>image?resolve(image):reject(new Error('Snapshot unavailable.')),'image/png'));
+      controller.signal.throwIfAborted();return blob;
+    }finally{cleanup();}
+  };
+  try{return await Promise.race([capture(),cancelled]);}
+  finally{clearTimeout(timer);signal?.removeEventListener('abort',cancel);controller.signal.removeEventListener('abort',onAbort);}
 }
 
 // Capture one computer at a time, with breathing room between connections.

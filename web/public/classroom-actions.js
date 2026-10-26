@@ -52,8 +52,8 @@ export function setupClassroomActions({state,filtered,api,makeRFB,escapeHTML}) {
       return await new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('Screenshot unavailable.')),'image/png'));
     }
     const rfb=state.remote?.computer.id===computer.id?state.remote.rfb:state.connections.get(computer.id);
-    if(!rfb||rfb._rfbConnectionState!=='connected')return captureDesktop(computer,makeRFB);
-    await waitForFrame(rfb);
+    if(!rfb||rfb._rfbConnectionState!=='connected')return captureDesktop(computer,makeRFB,{timeout:(state.connectionTimeoutSeconds??2)*1000});
+    await waitForFrame(rfb,{timeout:(state.connectionTimeoutSeconds??2)*1000});
     return await new Promise((resolve,reject)=>rfb.toBlob(blob=>blob?resolve(blob):reject(new Error('Screenshot unavailable.')),'image/png'));
   }
   async function run(computer,action,values,file){

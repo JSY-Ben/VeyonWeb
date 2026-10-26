@@ -97,27 +97,30 @@ function render() {
   $('#empty-add').hidden = !!state.computers.length;
   $('#page-label').textContent = `Page ${state.page+1} of ${Math.max(1,Math.ceil(list.length/state.pageSize))}`;
   $('#prev-page').disabled = state.page === 0; $('#next-page').disabled = (state.page+1)*state.pageSize >= list.length;
-  $('#monitor-toggle').innerHTML = `${icon(state.monitoring ? 'pause' : 'play')}<span>${state.monitoring ? 'Pause refresh' : 'Refresh classroom'}</span>`;
   $('#monitor-dot').classList.toggle('live', state.monitoring);
   updateOverviewHint();
   updateStats();
   if (state.monitoring && !state.remote && !document.hidden) connectOverview(page);
 }
-async function makeRFB(computer, target, mode) {
-  const { path } = await api('/api/tickets', { method:'POST', body: JSON.stringify({computerId:computer.id, mode}) });
+async function makeRFB(computer, target, mode, {signal} = {}) {
+  const { path } = await api('/api/tickets', { method:'POST', signal, body: JSON.stringify({computerId:computer.id, mode}) });
   if (!target.isConnected) throw new Error('Session cancelled.');
   const url = new URL(path, location.href); url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
   const channel = new WebSocket(url.href);
   let rfb;
-  channel.addEventListener('close', event => { if (rfb) rfb.gatewayError = event.reason; });
+  channel.addEventListener('close', event => { if (rfb && event.reason) rfb.gatewayError = event.reason; });
   try { rfb = new RFB(target, channel, { shared: true }); } catch (error) { channel.close(); throw error; }
+  const connectionTimer=setTimeout(()=>{rfb.gatewayError=`Connection timed out after ${state.connectionTimeoutSeconds??2} seconds.`;rfb.disconnect();},(state.connectionTimeoutSeconds??2)*1000);
+  const connected=()=>clearTimeout(connectionTimer);
+  rfb.addEventListener('connect',connected,{once:true});
+  rfb.addEventListener('disconnect',()=>{clearTimeout(connectionTimer);rfb.removeEventListener('connect',connected);},{once:true});
   rfb.viewOnly = mode === 'view'; rfb.scaleViewport = true; rfb.resizeSession = false; rfb.showDotCursor = mode === 'control';
   rfb.qualityLevel = mode === 'control' ? 6 : 2; rfb.compressionLevel = 6;
   rfb.clipViewport = false; rfb.background = '#10251f';
   return rfb;
 }
 function updateOverviewHint(){
-  $('#overview-status').textContent=state.monitoring?`Snapshot overview · refresh every ${state.overviewRefreshSeconds}s · Open View or Remote control for live video.`:(snapshotURLs.size?'Refresh paused · Last pictures remain until you change classroom or page.':'Choose Refresh classroom to load desktop pictures.');
+  $('#overview-status').textContent=state.monitoring?`Snapshot overview · refresh every ${state.overviewRefreshSeconds}s · Open View or Remote control for live video.`:'Configure Veyon credentials to load desktop pictures automatically.';
 }
 function connectOverview(computers) {
   overviewSnapshots?.stop();
@@ -126,7 +129,7 @@ function connectOverview(computers) {
     stagger:state.overviewStaggerMs??750,
     capture:async(computer,signal)=>{
       if(!snapshotURLs.has(computer.id))setStatus(computer.id,'connecting','Capturing a desktop picture…');
-      if(!state.demo)return captureDesktop(computer,makeRFB,{signal});
+      if(!state.demo)return captureDesktop(computer,makeRFB,{signal,timeout:(state.connectionTimeoutSeconds??2)*1000});
       const staging=document.createElement('div');staging.className='screenshot-staging';document.body.append(staging);
       const demo=demoScreen(staging,computer,false);
       try{return await new Promise((resolve,reject)=>staging.querySelector('canvas').toBlob(blob=>blob?resolve(blob):reject(new Error('Sample snapshot unavailable.')),'image/png'));}
@@ -148,11 +151,12 @@ async function loadClassroom() {
   const data = await api('/api/computers'); Object.assign(state,{ computers:data.computers, ready:data.ready, demo:data.demo, maxUploadBytes:data.maxUploadBytes });
   state.overviewRefreshSeconds=data.overviewRefreshSeconds||10;
   state.overviewStaggerMs=data.overviewStaggerMs??750;
+  state.connectionTimeoutSeconds=data.connectionTimeoutSeconds??2;
   try{const saved=Number(localStorage.getItem(refreshStorageKey));if(Number.isInteger(saved)&&saved>=2&&saved<=3600)state.overviewRefreshSeconds=saved;}catch{}
   $('#overview-refresh').value=state.overviewRefreshSeconds;
   $('#demo-banner').hidden = !state.demo; $('#network-label').textContent = state.demo ? 'Sample workspace' : 'Local gateway';
   $('.local-badge').innerHTML = `<span class="dot"></span>${state.demo ? 'Sample mode' : 'School network'}`;
-  state.monitoring = state.demo; render();
+  state.monitoring = state.ready || state.demo; render();
 }
 function showHelp() {
   $('#setup-status').textContent = state.demo ? 'Sample mode: screens and input are simulated. For real computers, configure Apache/PHP and run php scripts/setup.php on your school server.' : state.ready ? 'Veyon credentials are configured on the PHP gateway. Add a target and connect to verify access.' : 'Veyon credentials are missing. Configure config/local.php and restart the PHP gateway before connecting to real computers.';
@@ -169,13 +173,6 @@ $('#all-computers').onclick = () => { state.room=null; state.page=0; render(); }
 $('#search').oninput = e => { state.search=e.target.value; state.page=0; render(); };
 $('#prev-page').onclick = () => { state.page--; render(); };
 $('#next-page').onclick = () => { state.page++; render(); };
-$('#monitor-toggle').onclick = () => {
-  if(!state.ready&&!state.demo){showHelp();return;}
-  state.monitoring=!state.monitoring;stopOverview();
-  $('#monitor-toggle').innerHTML=`${icon(state.monitoring?'pause':'play')}<span>${state.monitoring?'Pause refresh':'Refresh classroom'}</span>`;
-  $('#monitor-dot').classList.toggle('live',state.monitoring);updateOverviewHint();updateStats();
-  if(state.monitoring&&!state.remote&&!document.hidden)connectOverview(currentPage());
-};
 $('#overview-refresh').onchange=event=>{
   const seconds=Number(event.target.value);
   if(!Number.isInteger(seconds)||seconds<2||seconds>3600){event.target.value=state.overviewRefreshSeconds;toast('Choose a refresh interval from 2 to 3600 seconds.');return;}

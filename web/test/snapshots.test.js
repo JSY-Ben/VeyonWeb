@@ -50,3 +50,16 @@ test('capturing one picture disconnects and removes the temporary desktop on suc
     await assert.rejects(request,{name:'AbortError'});assert.equal(disconnected,2);
   }finally{if(original===undefined)delete globalThis.document;else globalThis.document=original;}
 });
+
+test('connection timeout includes ticket acquisition and closes a late connection',async()=>{
+  const original=globalThis.document;let disconnected=0,release,requestSignal;
+  globalThis.document={createElement:()=>({remove(){}}),body:{append(){}}};
+  try{
+    const capture=captureDesktop({id:'slow'},async(_computer,_target,_mode,{signal})=>{requestSignal=signal;return new Promise(resolve=>{release=resolve;});},{timeout:10});
+    await assert.rejects(capture,/Connection timed out/);assert.ok(requestSignal.aborted);
+    release({hasFrame:true,disconnect(){disconnected++;}});await tick();assert.equal(disconnected,1);
+    const rfb=new EventTarget();rfb.disconnect=()=>{disconnected++;};
+    await assert.rejects(captureDesktop({id:'slow-frame'},async()=>rfb,{timeout:10}),/Connection timed out/);
+    assert.equal(disconnected,2,'waiting for a first frame also has a bounded connection deadline');
+  }finally{if(original===undefined)delete globalThis.document;else globalThis.document=original;}
+});

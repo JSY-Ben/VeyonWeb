@@ -8,11 +8,11 @@ final class FeatureClient
     private $socket;
     private string $buffer = '';
     private float $deadline;
-    public function __construct(array $target, array $credentials)
+    public function __construct(array $target, array $credentials, int $connectionTimeout = 2)
     {
-        $this->deadline = microtime(true) + 25;
+        $this->deadline = microtime(true) + $connectionTimeout;
         $host = str_contains($target['host'], ':') ? '[' . $target['host'] . ']' : $target['host'];
-        $this->socket = @stream_socket_client('tcp://' . $host . ':' . $target['port'], $errno, $error, 5);
+        $this->socket = @stream_socket_client('tcp://' . $host . ':' . $target['port'], $errno, $error, $connectionTimeout);
         if (!$this->socket) throw new \RuntimeException('Cannot reach Veyon. Check the address, port and firewall.');
         stream_set_timeout($this->socket, 5);
         try {
@@ -27,11 +27,17 @@ final class FeatureClient
             $nameLength = unpack('N', substr($header, 20, 4))[1];
             if ($nameLength > 65536) throw new \RuntimeException('Invalid Veyon desktop name.');
             $this->read($nameLength);
+            // The connection deadline does not limit subsequent file transfers.
+            $this->deadline = microtime(true) + 25;
+            stream_set_timeout($this->socket, 5);
         } catch (\Throwable $error) { $this->close(); throw $error; }
     }
     private function readChunk(): string
     {
-        if (microtime(true) > $this->deadline) throw new \RuntimeException('Veyon command timed out.');
+        $remaining = $this->deadline - microtime(true);
+        if ($remaining <= 0) throw new \RuntimeException('Veyon command timed out.');
+        $wait = min(5, $remaining);
+        stream_set_timeout($this->socket, (int)$wait, (int)(($wait - (int)$wait) * 1000000));
         $data = fread($this->socket, 8192);
         if ($data === false || $data === '') throw new \RuntimeException('Veyon disconnected or timed out. Check credentials and access-control rules.');
         return $data;
