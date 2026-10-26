@@ -4,6 +4,8 @@ A web dashboard for viewing and remotely controlling Veyon classroom computers.
 
 Classroom actions include screenshots, text messages, screen lock/unlock, opening websites, running programs, Wake-on-LAN, restart/shutdown/logoff, and file distribution. Select individual cards or use **Select classroom / filtered list**, then **Actions for selected PCs**. Selection spans pages within the current classroom/search. Changing the filter removes selections outside that filter. Each target gets its own result; **Stop remaining** stops queued targets, while in-flight commands may still finish.
 
+The classroom overview displays still pictures rather than continuous video. Click **Refresh classroom**, then choose **Refresh every … sec** (2–3600 seconds). The default is 10 seconds; set `overview_refresh_seconds` in `web/config/local.php` to change the server default. A teacher's browser override is remembered for that app URL. Each refresh captures a rendered frame through a short-lived view-only gateway connection and disconnects it. Up to three captures run together; slow rounds finish before another starts, so slow PCs may extend the interval. Only the current page is refreshed. Refresh pauses in a hidden tab and while the individual-PC viewer is open. **Pause refresh** keeps the last pictures; failed refreshes keep the last successful picture with its timestamp and a failure indicator. Individual **View** and **Remote control** sessions remain full-motion.
+
 ## Requirements
 
 - Linux/Unix server with PHP 8.2+, Composer, and the OpenSSL, PDO SQLite, iconv, PCNTL and POSIX extensions.
@@ -68,7 +70,7 @@ The commands below assume Debian/Ubuntu, mod_php, systemd and an installation at
    sudo systemctl status veyon-gateway
    ```
 
-6. Open your HTTPS site and sign in. Add computers using their hostname/IP and Veyon port, then select **Connect classroom**. Choose **View** for a read-only session or **Remote control** for keyboard and mouse access.
+6. Open your HTTPS site and sign in. Add computers using their hostname/IP and Veyon port, then select **Refresh classroom**. Choose **View** for a live read-only session or **Remote control** for keyboard and mouse access.
 
 Restart the gateway after changing its configuration: `sudo systemctl restart veyon-gateway`.
 If you change `data_directory` later, rerun setup to regenerate the service, or update its `ReadWritePaths` manually and reload systemd before restarting.

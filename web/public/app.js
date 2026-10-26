@@ -1,5 +1,6 @@
 import RFB from './veyon-rfb.js';
 import {setupClassroomActions} from './classroom-actions.js';
+import {captureDesktop,SnapshotOverview} from './snapshots.js';
 const appBase = new URL('.', import.meta.url);
 const $ = selector => document.querySelector(selector);
 const icons = {
@@ -27,8 +28,10 @@ const icons = {
 function icon(name) { return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name] || icons.monitor}</svg>`; }
 function hydrateIcons(scope = document) { scope.querySelectorAll('[data-icon]').forEach(el => el.innerHTML = icon(el.dataset.icon)); }
 hydrateIcons();
-const state = { computers: [], room: null, search: '', page: 0, pageSize: 12, monitoring: false, demo: false, ready: false, connections: new Map(), statuses: new Map(), generation: 0, remote: null };
-let toastTimer, pendingImport;
+const state = { computers: [], room: null, search: '', page: 0, pageSize: 12, monitoring: false, demo: false, ready: false, connections: new Map(), statuses: new Map(), generation: 0, remote: null, overviewRefreshSeconds: 10 };
+let toastTimer, pendingImport, overviewSnapshots;
+const snapshotURLs=new Map();
+const refreshStorageKey=`veyonweb-overview-refresh:${appBase.pathname}`;
 function toast(text) { $('#toast').textContent = text; $('#toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => $('#toast').hidden = true, 5000); }
 function escapeHTML(value) { return String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 async function api(url, options = {}) {
@@ -43,11 +46,13 @@ async function api(url, options = {}) {
 function filtered() { return state.computers.filter(c => (!state.room || c.room === state.room) && `${c.name} ${c.host}`.toLowerCase().includes(state.search.toLowerCase())); }
 function currentPage() { const list = filtered(); state.page = Math.max(0,Math.min(state.page, Math.ceil(list.length / state.pageSize)-1)); return list.slice(state.page*state.pageSize, (state.page+1)*state.pageSize); }
 function stopOverview() {
+  overviewSnapshots?.stop();
   state.generation++;
   for (const connection of state.connections.values()) connection.disconnect();
   state.connections.clear(); state.statuses.clear();
 }
-function stopAll() { classroomActions.stop();state.monitoring = false; closeRemote(); stopOverview(); }
+function clearSnapshots(){for(const url of snapshotURLs.values())URL.revokeObjectURL(url);snapshotURLs.clear();document.querySelectorAll('.snapshot-image').forEach(image=>image.remove());}
+function stopAll() { clearSnapshots();classroomActions.stop();state.monitoring = false; closeRemote(); stopOverview(); }
 function renderNavigation() {
   $('#total-count').textContent = state.computers.length;
   $('#all-computers').classList.toggle('active', !state.room);
@@ -59,28 +64,29 @@ function renderNavigation() {
   $('#breadcrumb-room').textContent = state.room || 'All computers';
 }
 function updateStats() {
-  const list = filtered(), online = list.filter(c => state.statuses.get(c.id)?.kind === 'connected').length;
+  const list = filtered(), online = list.filter(c => snapshotURLs.has(c.id)).length;
   $('#stat-total').textContent = list.length; $('#stat-online').textContent = online; $('#stat-idle').textContent = list.length-online;
-  $('#online-label').textContent = state.demo ? 'sample screens' : 'connected screens';
-  $('#idle-label').textContent = state.monitoring ? 'not connected' : 'ready to connect';
+  $('#online-label').textContent = state.demo ? 'sample pictures' : 'previews ready';
+  $('#idle-label').textContent = state.monitoring ? 'awaiting preview' : 'ready to refresh';
 }
 function setStatus(id, kind, text) {
   state.statuses.set(id, { kind, text });
   const card = document.getElementById(`computer-${id}`); if (!card) return;
   const label = card.querySelector('.computer-state'); label.className = `computer-state ${kind}`;
-  label.innerHTML = '<span class="dot"></span><span></span>'; label.lastElementChild.textContent = kind === 'connected' ? (state.demo ? 'Sample' : 'Connected') : kind === 'connecting' ? 'Connecting' : kind === 'error' ? 'Unavailable' : 'Not connected';
+  const hasPicture=!!card.querySelector('.snapshot-image');
+  label.innerHTML = '<span class="dot"></span><span></span>'; label.lastElementChild.textContent = kind === 'connected' ? (state.demo ? 'Sample' : 'Updated') : kind === 'connecting' ? 'Refreshing' : kind === 'error' ? (hasPicture?'Refresh failed':'Unavailable') : 'Not refreshed';
   label.title = text;
   const placeholder = card.querySelector('.screen-placeholder');
-  placeholder.hidden = kind === 'connected'; placeholder.classList.toggle('screen-error', kind === 'error');
+  placeholder.hidden = kind === 'connected' || hasPicture; placeholder.classList.toggle('screen-error', kind === 'error');
   if (kind !== 'connected') placeholder.innerHTML = `${kind === 'connecting' ? '<span class="spinner"></span>' : icon(kind === 'error' ? 'info' : 'monitor')}<span>${escapeHTML(text)}</span>`;
-  card.querySelector('.screen-tag').hidden = kind !== 'connected';
+  card.querySelector('.screen-tag').hidden = kind !== 'connected' && !hasPicture;
   updateStats();
 }
 function render() {
-  stopOverview(); renderNavigation();
+  stopOverview(); clearSnapshots(); renderNavigation();
   const list = filtered(), page = currentPage();
   $('#view-count').textContent = list.length;
-  $('#computer-grid').innerHTML = page.map(c => `<article class="computer-card" id="computer-${c.id}"><label class="card-select"><input type="checkbox" class="select-computer" data-id="${c.id}" aria-label="Select ${escapeHTML(c.name)}">Select</label><div class="screen-wrap"><div class="thumbnail" id="screen-${c.id}"></div><div class="screen-placeholder">${icon('monitor')}<span>Ready to connect</span></div><span class="screen-tag" hidden><span class="dot"></span>${state.demo ? 'SAMPLE SCREEN' : 'LIVE SCREEN'}</span></div><div class="card-info"><div class="card-heading"><h3>${escapeHTML(c.name)}</h3><span class="computer-state"><span class="dot"></span>Not connected</span></div><p class="computer-address">${escapeHTML(c.host)} <span>· ${escapeHTML(c.room)}</span></p><div class="card-actions"><button class="button secondary view-button" data-id="${c.id}">${icon('eye')}View</button><button class="button control-button" data-id="${c.id}">${icon('pointer')}Remote control</button><button class="icon-button edit-button" data-id="${c.id}" aria-label="Edit ${escapeHTML(c.name)}" title="Edit computer">${icon('edit')}</button></div></div></article>`).join('');
+  $('#computer-grid').innerHTML = page.map(c => `<article class="computer-card" id="computer-${c.id}"><label class="card-select"><input type="checkbox" class="select-computer" data-id="${c.id}" aria-label="Select ${escapeHTML(c.name)}">Select</label><div class="screen-wrap"><div class="thumbnail" id="screen-${c.id}"></div><div class="screen-placeholder">${icon('monitor')}<span>Ready to refresh</span></div><span class="screen-tag" hidden><span class="dot"></span>${state.demo ? 'SAMPLE PICTURE' : 'SNAPSHOT'}</span></div><div class="card-info"><div class="card-heading"><h3>${escapeHTML(c.name)}</h3><span class="computer-state"><span class="dot"></span>Not refreshed</span></div><p class="computer-address">${escapeHTML(c.host)} <span>· ${escapeHTML(c.room)}</span></p><div class="card-actions"><button class="button secondary view-button" data-id="${c.id}">${icon('eye')}View</button><button class="button control-button" data-id="${c.id}">${icon('pointer')}Remote control</button><button class="icon-button edit-button" data-id="${c.id}" aria-label="Edit ${escapeHTML(c.name)}" title="Edit computer">${icon('edit')}</button></div></div></article>`).join('');
   $('#computer-grid').querySelectorAll('.view-button').forEach(b => b.onclick = () => openRemote(b.dataset.id, 'view'));
   $('#computer-grid').querySelectorAll('.control-button').forEach(b => b.onclick = () => openRemote(b.dataset.id, 'control'));
   $('#computer-grid').querySelectorAll('.edit-button').forEach(b => b.onclick = () => editComputer(b.dataset.id));
@@ -91,11 +97,11 @@ function render() {
   $('#empty-add').hidden = !!state.computers.length;
   $('#page-label').textContent = `Page ${state.page+1} of ${Math.max(1,Math.ceil(list.length/state.pageSize))}`;
   $('#prev-page').disabled = state.page === 0; $('#next-page').disabled = (state.page+1)*state.pageSize >= list.length;
-  $('#monitor-toggle').innerHTML = `${icon(state.monitoring ? 'pause' : 'play')}<span>${state.monitoring ? 'Pause overview' : 'Connect classroom'}</span>`;
+  $('#monitor-toggle').innerHTML = `${icon(state.monitoring ? 'pause' : 'play')}<span>${state.monitoring ? 'Pause refresh' : 'Refresh classroom'}</span>`;
   $('#monitor-dot').classList.toggle('live', state.monitoring);
-  $('#overview-status').textContent = state.monitoring ? (state.demo ? 'Sample screens · Explore a computer to try the session interface.' : 'Live overview · Choose a computer to view or take control.') : 'Ready when you are. Connect to see your classroom screens.';
+  updateOverviewHint();
   updateStats();
-  if (state.monitoring && !state.remote) connectOverview(page);
+  if (state.monitoring && !state.remote && !document.hidden) connectOverview(page);
 }
 async function makeRFB(computer, target, mode) {
   const { path } = await api('/api/tickets', { method:'POST', body: JSON.stringify({computerId:computer.id, mode}) });
@@ -110,29 +116,38 @@ async function makeRFB(computer, target, mode) {
   rfb.clipViewport = false; rfb.background = '#10251f';
   return rfb;
 }
-async function connectOverview(computers) {
-  const generation = state.generation;
-  // Small batches avoid overwhelming the Veyon service with simultaneous RSA handshakes.
-  for (let i=0; i<computers.length; i+=3) {
-    if (generation !== state.generation || state.remote || !state.monitoring) return;
-    await Promise.all(computers.slice(i,i+3).map(async c => {
-      const target = document.getElementById(`screen-${c.id}`); if (!target) return;
-      setStatus(c.id, 'connecting', 'Connecting to Veyon…');
-      try {
-        if (state.demo) { state.connections.set(c.id, demoScreen(target,c,false)); setStatus(c.id,'connected','Simulated screen'); return; }
-        const rfb = await makeRFB(c, target, 'view');
-        if (generation !== state.generation) { rfb.disconnect(); return; }
-        state.connections.set(c.id, rfb);
-        let reason = '';
-        rfb.addEventListener('connect', () => { if(generation === state.generation) setStatus(c.id,'connected','Connected'); });
-        rfb.addEventListener('securityfailure', e => { reason = e.detail.reason || 'Veyon rejected the connection.'; });
-        rfb.addEventListener('disconnect', () => { if (generation === state.generation) { state.connections.delete(c.id); setStatus(c.id,'error',reason || rfb.gatewayError || 'Could not connect. Check the host, credentials and Veyon access rules.'); } });
-      } catch (error) { if (generation === state.generation) setStatus(c.id,'error', error.message); }
-    }));
-  }
+function updateOverviewHint(){
+  $('#overview-status').textContent=state.monitoring?`Snapshot overview · refresh every ${state.overviewRefreshSeconds}s · Open View or Remote control for live video.`:(snapshotURLs.size?'Refresh paused · Last pictures remain until you change classroom or page.':'Choose Refresh classroom to load desktop pictures.');
+}
+function connectOverview(computers) {
+  overviewSnapshots?.stop();
+  overviewSnapshots=new SnapshotOverview({
+    interval:state.overviewRefreshSeconds*1000,
+    capture:async(computer,signal)=>{
+      if(!snapshotURLs.has(computer.id))setStatus(computer.id,'connecting','Capturing a desktop picture…');
+      if(!state.demo)return captureDesktop(computer,makeRFB,{signal});
+      const staging=document.createElement('div');staging.className='screenshot-staging';document.body.append(staging);
+      const demo=demoScreen(staging,computer,false);
+      try{return await new Promise((resolve,reject)=>staging.querySelector('canvas').toBlob(blob=>blob?resolve(blob):reject(new Error('Sample snapshot unavailable.')),'image/png'));}
+      finally{demo.disconnect();staging.remove();}
+    },
+    onSnapshot:(computer,blob)=>{
+      const target=document.getElementById(`screen-${computer.id}`);if(!target)return;
+      const previous=snapshotURLs.get(computer.id),url=URL.createObjectURL(blob),image=document.createElement('img');
+      image.className='snapshot-image';image.alt=`Desktop snapshot of ${computer.name}`;image.src=url;target.replaceChildren(image);snapshotURLs.set(computer.id,url);if(previous)URL.revokeObjectURL(previous);
+      const updated=new Date(),tag=target.closest('.computer-card').querySelector('.screen-tag');
+      tag.textContent=`${state.demo?'Sample · ':''}Updated ${updated.toLocaleTimeString()}`;tag.title=updated.toLocaleString();
+      setStatus(computer.id,'connected',`Last snapshot: ${updated.toLocaleString()}`);
+    },
+    onError:(computer,error)=>setStatus(computer.id,'error',error.message+(snapshotURLs.has(computer.id)?' Showing the last successful picture.':'')),
+  });
+  overviewSnapshots.start(computers);
 }
 async function loadClassroom() {
   const data = await api('/api/computers'); Object.assign(state,{ computers:data.computers, ready:data.ready, demo:data.demo, maxUploadBytes:data.maxUploadBytes });
+  state.overviewRefreshSeconds=data.overviewRefreshSeconds||10;
+  try{const saved=Number(localStorage.getItem(refreshStorageKey));if(Number.isInteger(saved)&&saved>=2&&saved<=3600)state.overviewRefreshSeconds=saved;}catch{}
+  $('#overview-refresh').value=state.overviewRefreshSeconds;
   $('#demo-banner').hidden = !state.demo; $('#network-label').textContent = state.demo ? 'Sample workspace' : 'Local gateway';
   $('.local-badge').innerHTML = `<span class="dot"></span>${state.demo ? 'Sample mode' : 'School network'}`;
   state.monitoring = state.demo; render();
@@ -152,7 +167,19 @@ $('#all-computers').onclick = () => { state.room=null; state.page=0; render(); }
 $('#search').oninput = e => { state.search=e.target.value; state.page=0; render(); };
 $('#prev-page').onclick = () => { state.page--; render(); };
 $('#next-page').onclick = () => { state.page++; render(); };
-$('#monitor-toggle').onclick = () => { if (!state.ready && !state.demo) {showHelp();return;} state.monitoring=!state.monitoring;render(); };
+$('#monitor-toggle').onclick = () => {
+  if(!state.ready&&!state.demo){showHelp();return;}
+  state.monitoring=!state.monitoring;stopOverview();
+  $('#monitor-toggle').innerHTML=`${icon(state.monitoring?'pause':'play')}<span>${state.monitoring?'Pause refresh':'Refresh classroom'}</span>`;
+  $('#monitor-dot').classList.toggle('live',state.monitoring);updateOverviewHint();updateStats();
+  if(state.monitoring&&!state.remote&&!document.hidden)connectOverview(currentPage());
+};
+$('#overview-refresh').onchange=event=>{
+  const seconds=Number(event.target.value);
+  if(!Number.isInteger(seconds)||seconds<2||seconds>3600){event.target.value=state.overviewRefreshSeconds;toast('Choose a refresh interval from 2 to 3600 seconds.');return;}
+  state.overviewRefreshSeconds=seconds;try{localStorage.setItem(refreshStorageKey,String(seconds));}catch{}
+  updateOverviewHint();if(state.monitoring&&!state.remote&&!document.hidden)connectOverview(currentPage());
+};
 for (const id of ['help-button','top-help','demo-setup']) $(`#${id}`).onclick=showHelp;
 document.querySelectorAll('.close-dialog').forEach(b => b.onclick=()=>b.closest('dialog').close());
 function editComputer(id) {

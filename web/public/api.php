@@ -52,7 +52,7 @@ try {
     if ($route === '/api/computers' && $method === 'GET') {
         $computers = $db->roster();
         if ($config['demo']) $computers = array_map(fn($i) => ['id' => "demo-$i", 'name' => 'Studio ' . str_pad((string)$i, 2, '0', STR_PAD_LEFT), 'host' => "studio-$i.school.local", 'port' => 11100, 'room' => $i <= 6 ? 'Design studio' : 'Library'], range(1, 8));
-        respond(200, ['computers' => $computers, 'ready' => $config['demo'] || Config::ready($config), 'demo' => $config['demo'], 'authMethod' => $config['veyon']['method'], 'maxUploadBytes' => $config['max_upload_bytes']]);
+        respond(200, ['computers' => $computers, 'ready' => $config['demo'] || Config::ready($config), 'demo' => $config['demo'], 'authMethod' => $config['veyon']['method'], 'maxUploadBytes' => $config['max_upload_bytes'], 'overviewRefreshSeconds' => $config['overview_refresh_seconds']]);
     }
     if ($route === '/api/computers' && $method === 'PUT') {
         if ($config['demo']) respond(403, ['error' => 'The sample classroom cannot be edited. Start the live server to add your computers.']);

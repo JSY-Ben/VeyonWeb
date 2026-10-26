@@ -1,4 +1,5 @@
 import {download,safeName,screenshotZip} from './downloads.js';
+import {captureDesktop,waitForFrame} from './snapshots.js';
 const $=s=>document.querySelector(s);
 const labels={screenshot:'Capture screenshots',message:'Send message',lock:'Lock screens',unlock:'Unlock screens',website:'Open website',program:'Run program',wake:'Wake computers',reboot:'Restart computers',shutdown:'Shut down computers',logoff:'Log off users',files:'Distribute file'};
 const destructive=new Set(['reboot','shutdown','logoff']);
@@ -42,23 +43,18 @@ export function setupClassroomActions({state,filtered,api,makeRFB,escapeHTML}) {
     $('#action-error').textContent='';
   }
   async function capture(computer){
-    let rfb=state.remote?.computer.id===computer.id?state.remote.rfb:state.connections.get(computer.id);
-    let staging=null,temporary=false;
-    try{
-      if(state.demo){const canvas=state.remote?.computer.id===computer.id?$('#remote-screen canvas'):$(`#screen-${computer.id} canvas`);if(!canvas)throw new Error('Connect this sample screen first.');return await new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('Screenshot unavailable.')),'image/png'));}
-      if(!rfb||rfb._rfbConnectionState!=='connected'){
-        staging=document.createElement('div');staging.className='screenshot-staging';document.body.append(staging);
-        rfb=await makeRFB(computer,staging,'view');temporary=true;
+    if(state.demo){
+      let canvas=state.remote?.computer.id===computer.id?$('#remote-screen canvas'):$(`#screen-${computer.id} canvas`);
+      if(!canvas){
+        const image=$(`#screen-${computer.id} .snapshot-image`);if(!image)throw new Error('Refresh this sample picture first.');
+        await image.decode();canvas=document.createElement('canvas');canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;canvas.getContext('2d').drawImage(image,0,0);
       }
-      if(!rfb.hasFrame)await new Promise((resolve,reject)=>{
-        const finish=error=>{clearTimeout(timer);rfb.removeEventListener('framebufferupdate',ready);rfb.removeEventListener('disconnect',closed);error?reject(error):resolve();};
-        const ready=()=>finish(),closed=()=>finish(new Error(rfb.gatewayError||'Disconnected before a screen was received.'));
-        const timer=setTimeout(()=>finish(new Error('Timed out waiting for a screen.')),20000);
-        rfb.addEventListener('framebufferupdate',ready,{once:true});rfb.addEventListener('disconnect',closed,{once:true});
-        if(rfb.hasFrame)ready();
-      });
-      return await new Promise((resolve,reject)=>rfb.toBlob(blob=>blob?resolve(blob):reject(new Error('Screenshot unavailable.')),'image/png'));
-    } finally {if(temporary)rfb?.disconnect();staging?.remove();}
+      return await new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('Screenshot unavailable.')),'image/png'));
+    }
+    const rfb=state.remote?.computer.id===computer.id?state.remote.rfb:state.connections.get(computer.id);
+    if(!rfb||rfb._rfbConnectionState!=='connected')return captureDesktop(computer,makeRFB);
+    await waitForFrame(rfb);
+    return await new Promise((resolve,reject)=>rfb.toBlob(blob=>blob?resolve(blob):reject(new Error('Screenshot unavailable.')),'image/png'));
   }
   async function run(computer,action,values,file){
     if(action==='screenshot'){
