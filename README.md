@@ -22,6 +22,8 @@ The commands below assume Debian/Ubuntu, mod_php, systemd and an installation at
 
    Enter a teacher username, password and HTTPS site origin, such as `https://classroom.school.example`, without a trailing slash.
 
+   On Linux, setup also prompts for the data directory and offers to install the systemd gateway service using `sudo`. Accept to create the directory with the chosen service account's ownership, generate the service with your installation and data paths, install it, reload systemd, enable it and restart it. The default service user and group are `www-data`. This replaces `/etc/systemd/system/veyon-gateway.service`; review any existing systemd overrides if they set paths. Existing classroom data is not moved automatically. If you accept this step, directory creation in step 3 and manual service installation in step 5 are already handled.
+
 2. Edit `web/config/local.php`. In the `veyon` section, set your teacher username, key name and private-key path. Install the matching public key on the classroom PCs. For logon authentication, set `method` to `logon` and provide the Veyon username and password.
 
 3. Set `data_directory` in `web/config/local.php` to an absolute path for the database, gateway log and PID file. Setup prompts for this location; the default is `/var/www/html/VeyonWeb/web/data`. Create it before starting the service:
@@ -67,6 +69,7 @@ The commands below assume Debian/Ubuntu, mod_php, systemd and an installation at
 6. Open your HTTPS site and sign in. Add computers using their hostname/IP and Veyon port, then select **Connect classroom**. Choose **View** for a read-only session or **Remote control** for keyboard and mouse access.
 
 Restart the gateway after changing its configuration: `sudo systemctl restart veyon-gateway`.
+If you change `data_directory` later, rerun setup to regenerate the service, or update its `ReadWritePaths` manually and reload systemd before restarting.
 
 ## Maintenance
 

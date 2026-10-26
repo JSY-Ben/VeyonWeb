@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
+require __DIR__.'/gateway-service.php';
 function ask(string $prompt): string { fwrite(STDOUT,$prompt);$line=fgets(STDIN);if($line===false)throw new RuntimeException('Input ended.');return trim($line); }
 function secret(string $prompt): string {
     fwrite(STDOUT,$prompt);
@@ -31,6 +32,14 @@ try {
     $data="<?php\ndeclare(strict_types=1);\nreturn ".var_export($config,true).";\n";
     $old=umask(0027);
     try{if(file_put_contents($path.'.tmp',$data,LOCK_EX)===false)throw new RuntimeException('Cannot write configuration.');chmod($path.'.tmp',0640);rename($path.'.tmp',$path);}finally{umask($old);}
-    echo "Teacher login saved in config/local.php. Configure the Veyon key or logon credentials there, then start the PHP gateway.\n";
-    echo "Create the data directory with www-data ownership and set the gateway service ReadWritePaths to: ".$config['data_directory']."\n";
+    echo "Teacher login saved in config/local.php. Configure the Veyon key or logon credentials there.\n";
+    if(PHP_OS_FAMILY==='Linux') {
+        $install=ask('Create the data directory and install/restart the systemd gateway service using sudo? [Y/n]: ');
+        if($install==='' || in_array(strtolower($install),['y','yes'],true)) {
+            $account=ask('Service user and group [www-data]: ') ?: 'www-data';
+            installGatewayService($config,$path,$account);
+        }
+    } else {
+        echo "Automatic service installation requires Linux/systemd.\n";
+    }
 }catch(Throwable $error){fwrite(STDERR,$error->getMessage()."\n");exit(1);}
