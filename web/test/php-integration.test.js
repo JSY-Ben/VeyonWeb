@@ -14,7 +14,7 @@ async function port(){const server=net.createServer();server.listen(0,'127.0.0.1
 const apache=process.env.APACHE_HTTPD && process.env.PHP_FPM;
 for(const method of ['key','logon'])test(`${apache?'Apache/PHP-FPM':'PHP HTTP'} + PHP gateway: ${method}, screens, input, read-only, ticket replay and logout`,{timeout:20000},async()=>{
   const dir=await mkdtemp(path.join(tmpdir(),'veyon-php-integration-')),input=[],sockets=[],children=[];
-  const fake=await fakeVeyon({method,onInput:data=>input.push(data)}),httpPort=await port(),wsPort=await port(),origin=`http://127.0.0.1:${httpPort}`;
+  const fake=await fakeVeyon({method,greeting:method==='key'?'RFB 003.008\0':'RFB 003.008\n',onInput:data=>input.push(data)}),httpPort=await port(),wsPort=await port(),origin=`http://127.0.0.1:${httpPort}`;
   let logs='',cookie='';
   async function request(route,verb='GET',body,requestOrigin=origin){return fetch(origin+route,{method:verb,headers:{Origin:requestOrigin,Cookie:cookie,'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});}
   async function open(mode){

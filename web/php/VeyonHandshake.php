@@ -34,7 +34,8 @@ final class VeyonHandshake
             switch ($this->state) {
                 case 'version':
                     $version = $this->take(12); if ($version === null) return;
-                    if (!preg_match('/^RFB 003\.00[78]\n$/D',$version)) throw new \RuntimeException('Expected a Veyon RFB 3.7/3.8 server.');
+                    // Veyon servers can terminate the 12-byte greeting with NUL.
+                    if (!preg_match('/^RFB 003\.00[78][\n\x00]$/D',$version)) throw new \RuntimeException('Expected a Veyon RFB 3.7/3.8 server.');
                     ($this->send)("RFB 003.008\n"); $this->state = 'count'; break;
                 case 'count':
                     $count = $this->take(1); if ($count === null) return;

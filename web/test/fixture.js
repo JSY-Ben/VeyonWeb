@@ -8,7 +8,7 @@ const keys = generateKeyPairSync('rsa', { modulusLength: 2048 });
 export const privateKey = keys.privateKey.export({ type:'pkcs8', format:'pem' });
 export const credentials = { method:'key', username:'teacher', keyName:'teacher', privateKey };
 
-export async function fakeVeyon({ method='key', fragment=false, onInput=()=>{} }={}) {
+export async function fakeVeyon({ method='key', fragment=false, greeting='RFB 003.008\n', onInput=()=>{} }={}) {
   const errors=[], sockets=new Set();
   const server=net.createServer(socket=>{
     sockets.add(socket);socket.on('close',()=>sockets.delete(socket));socket.on('error',()=>{});
@@ -18,7 +18,7 @@ export async function fakeVeyon({ method='key', fragment=false, onInput=()=>{} }
     };
     (async()=>{
       const reader=new SocketReader(socket);
-      await send(Buffer.from('RFB 003.008\n'));
+      await send(Buffer.from(greeting));
       assert.equal((await reader.read(12)).toString(),'RFB 003.008\n');
       await send(Buffer.from([1,40]));assert.equal((await reader.read(1))[0],40);
       await send(message(1,method==='key'?3:4));

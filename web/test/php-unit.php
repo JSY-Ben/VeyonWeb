@@ -28,16 +28,22 @@ runTest('Read-only filtering rejects keyboard/mouse/clipboard/resize across frag
     $resize=hex2bin('fb00000200020000');same((new RfbFilter(true))->push($resize),'');
     rejects(fn() => (new RfbFilter(false))->push(chr(99)));
 });
-runTest('PHP Veyon key handshake handles fragmented and combined messages',function (): void {
+foreach (["RFB 003.008\n", "RFB 003.008\0", "RFB 003.007\n", "RFB 003.007\0"] as $greeting) runTest('PHP Veyon key handshake handles fragmented greeting '.bin2hex($greeting),function () use ($greeting): void {
     $key=openssl_pkey_new(['private_key_bits'=>2048,'private_key_type'=>OPENSSL_KEYTYPE_RSA]);openssl_pkey_export($key,$pem);
     $sent=[];$ready=false;
     $handshake=new VeyonHandshake(['method'=>'key','username'=>'teacher','key_name'=>'teacher','private_key'=>$pem],function ($bytes) use (&$sent) {$sent[]=$bytes;},function ($remaining) use (&$ready) {$ready=true;same($remaining,'');});
     $challenge=random_bytes(128);
-    $bytes="RFB 003.008\n\x01\x28".Wire::message([Wire::variant(1),Wire::variant(3)]).Wire::message().Wire::message([Wire::variant($challenge,true)]).pack('N',0);
+    $bytes=$greeting."\x01\x28".Wire::message([Wire::variant(1),Wire::variant(3)]).Wire::message().Wire::message([Wire::variant($challenge,true)]).pack('N',0);
     foreach(str_split($bytes,3) as $chunk)$handshake->push($chunk);
     check($ready,'Handshake did not finish.');same($sent[0],"RFB 003.008\n");same($sent[1],chr(40));
     same(Wire::decode(substr($sent[2],4)),[3,'teacher']);$response=Wire::decode(substr($sent[3],4));same($response[0],'teacher');
     same(openssl_verify($challenge,$response[1],openssl_pkey_get_details($key)['key'],OPENSSL_ALGO_SHA512),1);
+});
+runTest('Invalid Veyon greetings remain rejected', function (): void {
+    foreach (["RFB 003.008\r", "RFB 003.003\n", "HTTP/1.1 200"] as $greeting) {
+        $handshake = new VeyonHandshake(['method'=>'key'], function () {}, function () {});
+        rejects(fn() => $handshake->push(str_pad($greeting, 12, ' ')));
+    }
 });
 runTest('SQLite ticket consumption, logout and roster revocation',function (): void {
     $path=sys_get_temp_dir().'/veyon-php-unit-'.bin2hex(random_bytes(8)).'.sqlite';
