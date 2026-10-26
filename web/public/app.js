@@ -1,3 +1,4 @@
+import {classroomFromURL,classroomURL} from './classroom-url.js?v=classroom-url-20261026';
 import {applyAppearance} from './appearance.js?v=appearance-20261026';
 import RFB from './veyon-rfb.js?v=snapshot-pixels-20261026';
 import {setupAdminSettings} from './admin-settings.js?v=appearance-20261026';
@@ -79,13 +80,30 @@ function stopOverview() {
 }
 function clearSnapshots(){for(const url of snapshotURLs.values())URL.revokeObjectURL(url);snapshotURLs.clear();document.querySelectorAll('.snapshot-image').forEach(image=>image.remove());}
 function stopAll() { adminSettings?.close();document.querySelectorAll('dialog[open]').forEach(dialog=>dialog.close());clearSnapshots();classroomActions.stop();state.monitoring = false; closeRemote(); stopOverview(); }
+function updateClassroomURL(replace=false){
+  const url=classroomURL(location.href,state.room);
+  if(url.href!==location.href)history[replace?'replaceState':'pushState'](null,'',url.href);
+}
+function restoreClassroom(){
+  state.room=classroomFromURL(location.href,state.computers);state.page=0;
+  updateClassroomURL(true);
+}
+function selectClassroom(room){
+  state.room=room;state.page=0;updateClassroomURL();
+  if(state.remote)closeRemote();
+  render();
+}
+window.addEventListener('popstate',()=>{
+  if($('#workspace').hidden)return;
+  restoreClassroom();if(state.remote)closeRemote();render();
+});
 function renderNavigation() {
   $('#total-count').textContent = state.computers.length;
   $('#all-computers').classList.toggle('active', !state.room);
   const rooms = [...new Set(state.computers.map(c => c.room))].sort();
   $('#room-list').innerHTML = rooms.filter(room=>room.toLowerCase().includes($('#room-search').value.toLowerCase())).map(room => `<button class="nav-item ${state.room === room ? 'active' : ''}" data-room="${escapeHTML(room)}">${icon('room')}<span>${escapeHTML(room)}</span><span class="room-count">${state.computers.filter(c => c.room === room).length}</span></button>`).join('');
   $('#room-search-empty').hidden=$('#room-list').childElementCount>0;
-  $('#room-list').querySelectorAll('button').forEach(button => button.onclick = () => { state.room = button.dataset.room; state.page = 0; render(); });
+  $('#room-list').querySelectorAll('button').forEach(button => button.onclick = () => selectClassroom(button.dataset.room));
   $('#room-suggestions').innerHTML = rooms.map(room => `<option value="${escapeHTML(room)}">`).join('');
   $('#room-title').innerHTML = `${escapeHTML(state.room || 'All computers')}<span class="heading-dot">.</span>`;
   $('#breadcrumb-room').textContent = state.room || 'All computers';
@@ -199,7 +217,7 @@ async function loadClassroom() {
   $('#settings-notice').textContent=state.canManage?(data.settingsNotice||''):'';$('#settings-notice').hidden=!state.canManage||!data.settingsNotice;
   $('#demo-banner').hidden = !state.demo; $('#network-label').textContent = state.demo ? 'Sample workspace' : 'Local gateway';
   $('.local-badge').innerHTML = `<span class="dot"></span>${state.demo ? 'Sample mode' : 'School network'}`;
-  state.monitoring = state.ready || state.demo; render();
+  restoreClassroom();state.monitoring = state.ready || state.demo; render();
 }
 function showHelp() {
   $('#setup-status').textContent = state.demo ? 'Sample mode: screens and input are simulated. For real computers, configure Apache/PHP and run php scripts/setup.php on your school server.' : state.ready ? 'Veyon credentials are configured on the PHP gateway. Add a target and connect to verify access.' : 'Veyon credentials are missing. Configure config/local.php and restart the PHP gateway before connecting to real computers.';
@@ -221,7 +239,7 @@ $('#login-form').onsubmit = async e => {
   catch(error){ $('#login-error').textContent=error.message; } finally { button.disabled=false; }
 };
 $('#logout').onclick = async () => { try { await api('/api/logout',{method:'POST',body:'{}'}); stopAll(); $('#workspace').hidden=true; $('#login').hidden=false; } catch(error){toast(error.message);} };
-$('#all-computers').onclick = () => { state.room=null; state.page=0; render(); };
+$('#all-computers').onclick = () => selectClassroom(null);
 $('#search').oninput = e => { state.search=e.target.value; state.page=0; render(); };
 $('#prev-page').onclick = () => { state.page--; render(); };
 $('#next-page').onclick = () => { state.page++; render(); };
@@ -245,7 +263,7 @@ function editComputer(id) {
 for(const id of ['add-computer','sidebar-add','empty-add']) $(`#${id}`).onclick=()=>editComputer();
 async function saveRoster(values) {
   const data=await api('/api/computers',{method:'PUT',body:JSON.stringify(values)}); state.computers=data.computers;
-  if(state.room && !state.computers.some(c=>c.room===state.room)) state.room=null;
+  if(state.room && !state.computers.some(c=>c.room===state.room)){state.room=null;updateClassroomURL(true);}
   render();
 }
 $('#computer-form').onsubmit=async e=>{
