@@ -16,6 +16,12 @@ final class Database
             CREATE TABLE IF NOT EXISTS attempts (ip TEXT PRIMARY KEY, count INTEGER NOT NULL, expires INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS meta (name TEXT PRIMARY KEY, value INTEGER NOT NULL);
             INSERT OR IGNORE INTO meta VALUES (\'generation\', 0);');
+        if (!in_array('mac', array_column($this->query('PRAGMA table_info(computers)')->fetchAll(), 'name'), true)) {
+            try { $this->pdo->exec("ALTER TABLE computers ADD COLUMN mac TEXT NOT NULL DEFAULT ''"); }
+            catch (\PDOException $error) {
+                if (!in_array('mac', array_column($this->query('PRAGMA table_info(computers)')->fetchAll(), 'name'), true)) throw $error;
+            }
+        }
     }
     public function query(string $sql, array $args = []): \PDOStatement { $statement = $this->pdo->prepare($sql); $statement->execute($args); return $statement; }
     public function transaction(callable $callback): mixed
@@ -47,8 +53,10 @@ final class Database
             if (!is_array($computer) || !is_string($computer['name'] ?? null) || trim($computer['name']) === '' || strlen($computer['name']) > 100 || !is_string($computer['room'] ?? null) || trim($computer['room']) === '' || strlen($computer['room']) > 100 || !is_string($computer['host'] ?? null) || !preg_match('/^[a-zA-Z0-9._:\-]{1,253}$/', $computer['host']) || !is_int($computer['port'] ?? null) || $computer['port'] < 1 || $computer['port'] > 65535) throw new \InvalidArgumentException('Each computer needs a name, classroom, valid hostname/IP and port (1–65535).');
             $id = $computer['id'] ?? bin2hex(random_bytes(16));
             if (!is_string($id) || !preg_match('/^[a-zA-Z0-9-]{1,64}$/', $id) || isset($ids[$id])) throw new \InvalidArgumentException('Computer IDs must be unique.');
+            $mac = $computer['mac'] ?? '';
+            if (!is_string($mac) || ($mac !== '' && !preg_match('/^(?:[a-f0-9]{2}[:-]){5}[a-f0-9]{2}$/iD', $mac))) throw new \InvalidArgumentException('Use a MAC address such as 00:11:22:33:44:55, or leave it empty.');
             $ids[$id] = true;
-            $result[] = ['id' => $id, 'name' => trim($computer['name']), 'host' => $computer['host'], 'port' => $computer['port'], 'room' => trim($computer['room'])];
+            $result[] = ['id' => $id, 'name' => trim($computer['name']), 'host' => $computer['host'], 'port' => $computer['port'], 'room' => trim($computer['room']), 'mac' => strtoupper(str_replace('-', ':', $mac))];
         }
         return $result;
     }
@@ -56,7 +64,7 @@ final class Database
     {
         $this->transaction(function () use ($computers) {
             $this->query('DELETE FROM tickets'); $this->query('DELETE FROM computers');
-            foreach ($computers as $c) $this->query('INSERT INTO computers (id,name,host,port,room) VALUES (?,?,?,?,?)', [$c['id'], $c['name'], $c['host'], $c['port'], $c['room']]);
+            foreach ($computers as $c) $this->query('INSERT INTO computers (id,name,host,port,room,mac) VALUES (?,?,?,?,?,?)', [$c['id'], $c['name'], $c['host'], $c['port'], $c['room'], $c['mac'] ?? '']);
             $this->query('UPDATE meta SET value = value + 1 WHERE name = \'generation\'');
         });
     }

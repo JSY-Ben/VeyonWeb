@@ -5,6 +5,7 @@ use Classroom\Wire;
 use Classroom\RfbFilter;
 use Classroom\Database;
 use Classroom\VeyonHandshake;
+use Classroom\Features;
 
 $passed = 0;
 function check(bool $value,string $message): void { if (!$value) throw new RuntimeException($message); }
@@ -58,5 +59,24 @@ runTest('SQLite ticket consumption, logout and roster revocation',function (): v
         rejects(fn() => Database::validateRoster([['name'=>'Lab','room'=>'Lab','host'=>'http://bad/path','port'=>11100]]));
         $db=null;
     } finally {foreach ([$path,$path.'-wal',$path.'-shm'] as $file)if(is_file($file))unlink($file);}
+});
+runTest('Classroom command validation, Qt feature types and Wake-on-LAN packet', function (): void {
+    same(bin2hex(Wire::uuid('ccb535a2-1d24-4cc1-a709-8b47d2b2ac79')), '0000001e00ccb535a21d244cc1a7098b47d2b2ac79');
+    same(bin2hex(Wire::boolean(true)), '000000010001');
+    same(bin2hex(Wire::strings(['A'])), '0000000b0000000001000000020041');
+    same(bin2hex(Wire::map([0=>Wire::variant(7)])), '000000080000000001000000020030000000020000000007');
+    rejects(fn()=>Features::command('unknown', []));
+    rejects(fn()=>Features::command('reboot', []));
+    rejects(fn()=>Features::command('shutdown', ['confirmed'=>'true']));
+    rejects(fn()=>Features::command('website', ['url'=>'file:///etc/passwd']));
+    rejects(fn()=>Features::command('program', ['program'=>"bad\0program"]));
+    foreach (['../lesson.txt', '..', 'C:\\file.txt', "bad\n.txt", 'file.'] as $name) rejects(fn()=>Features::filename($name));
+    same(Features::filename('lesson notes.pdf'), 'lesson notes.pdf');
+    $packet=Features::magicPacket('00:11:22:33:44:55');same(strlen($packet),102);
+    same(bin2hex($packet),str_repeat('ff',6).str_repeat('001122334455',16));
+    rejects(fn()=>Features::magicPacket(''));
+    $roster=Database::validateRoster([['name'=>'PC','host'=>'pc.local','port'=>11100,'room'=>'Room','mac'=>'aa-bb-cc-dd-ee-ff']]);
+    same($roster[0]['mac'],'AA:BB:CC:DD:EE:FF');
+    rejects(fn()=>Database::validateRoster([['name'=>'PC','host'=>'pc.local','port'=>11100,'room'=>'Room','mac'=>'not-a-mac']]));
 });
 echo "$passed PHP tests passed.\n";

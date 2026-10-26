@@ -13,6 +13,10 @@ return [
     'data_directory' => dirname(__DIR__) . '/data',
     'gateway_listen' => 'websocket://127.0.0.1:9001',
     'websocket_url' => '/remote',
+    // Wake-on-LAN is sent by the web server; use your subnet broadcast if needed.
+    'wake_broadcast' => '255.255.255.255',
+    // Also adjust PHP upload_max_filesize and post_max_size for file distribution.
+    'max_upload_bytes' => 20971520,
     'veyon' => [
         'method' => 'key',
         'username' => 'teacher',

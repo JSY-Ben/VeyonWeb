@@ -1,6 +1,17 @@
 import RFB from './rfb.js';
 
 export default class VeyonRFB extends RFB {
+  _framebufferUpdate() {
+    const complete = super._framebufferUpdate();
+    if (complete && this._FBU.rects === 0) {
+      this._display.flush().then(() => {
+        this.hasFrame = true;
+        this.dispatchEvent(new CustomEvent('framebufferupdate'));
+      });
+    }
+    return complete;
+  }
+
   _normalMsg() {
     // Only inspect message boundaries. Framebuffer payloads may also contain 41.
     if (this._FBU.rects === 0 && !this._sock.rQwait('message', 1) && this._sock.rQpeek8() === 41) {

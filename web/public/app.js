@@ -1,4 +1,5 @@
 import RFB from './veyon-rfb.js';
+import {setupClassroomActions} from './classroom-actions.js';
 const appBase = new URL('.', import.meta.url);
 const $ = selector => document.querySelector(selector);
 const icons = {
@@ -32,10 +33,11 @@ function toast(text) { $('#toast').textContent = text; $('#toast').hidden = fals
 function escapeHTML(value) { return String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 async function api(url, options = {}) {
   const endpoint = new URL('api.php?route=' + encodeURIComponent(url), appBase);
-  const res = await fetch(endpoint, { ...options, headers: { 'Content-Type': 'application/json', ...options.headers } });
+  const headers = options.body instanceof FormData ? {...options.headers} : {'Content-Type':'application/json',...options.headers};
+  const res = await fetch(endpoint, { ...options, headers });
   const body = await res.json();
   if (res.status === 401 && url !== '/api/login') { stopAll(); $('#workspace').hidden = true; $('#login').hidden = false; }
-  if (!res.ok) throw new Error(body.error || `Request failed (${res.status}).`);
+  if (!res.ok) { const error = new Error(body.error || `Request failed (${res.status}).`); error.status=res.status; throw error; }
   return body;
 }
 function filtered() { return state.computers.filter(c => (!state.room || c.room === state.room) && `${c.name} ${c.host}`.toLowerCase().includes(state.search.toLowerCase())); }
@@ -45,7 +47,7 @@ function stopOverview() {
   for (const connection of state.connections.values()) connection.disconnect();
   state.connections.clear(); state.statuses.clear();
 }
-function stopAll() { state.monitoring = false; closeRemote(); stopOverview(); }
+function stopAll() { classroomActions.stop();state.monitoring = false; closeRemote(); stopOverview(); }
 function renderNavigation() {
   $('#total-count').textContent = state.computers.length;
   $('#all-computers').classList.toggle('active', !state.room);
@@ -78,10 +80,11 @@ function render() {
   stopOverview(); renderNavigation();
   const list = filtered(), page = currentPage();
   $('#view-count').textContent = list.length;
-  $('#computer-grid').innerHTML = page.map(c => `<article class="computer-card" id="computer-${c.id}"><div class="screen-wrap"><div class="thumbnail" id="screen-${c.id}"></div><div class="screen-placeholder">${icon('monitor')}<span>Ready to connect</span></div><span class="screen-tag" hidden><span class="dot"></span>${state.demo ? 'SAMPLE SCREEN' : 'LIVE SCREEN'}</span></div><div class="card-info"><div class="card-heading"><h3>${escapeHTML(c.name)}</h3><span class="computer-state"><span class="dot"></span>Not connected</span></div><p class="computer-address">${escapeHTML(c.host)} <span>· ${escapeHTML(c.room)}</span></p><div class="card-actions"><button class="button secondary view-button" data-id="${c.id}">${icon('eye')}View</button><button class="button control-button" data-id="${c.id}">${icon('pointer')}Remote control</button><button class="icon-button edit-button" data-id="${c.id}" aria-label="Edit ${escapeHTML(c.name)}" title="Edit computer">${icon('edit')}</button></div></div></article>`).join('');
+  $('#computer-grid').innerHTML = page.map(c => `<article class="computer-card" id="computer-${c.id}"><label class="card-select"><input type="checkbox" class="select-computer" data-id="${c.id}" aria-label="Select ${escapeHTML(c.name)}">Select</label><div class="screen-wrap"><div class="thumbnail" id="screen-${c.id}"></div><div class="screen-placeholder">${icon('monitor')}<span>Ready to connect</span></div><span class="screen-tag" hidden><span class="dot"></span>${state.demo ? 'SAMPLE SCREEN' : 'LIVE SCREEN'}</span></div><div class="card-info"><div class="card-heading"><h3>${escapeHTML(c.name)}</h3><span class="computer-state"><span class="dot"></span>Not connected</span></div><p class="computer-address">${escapeHTML(c.host)} <span>· ${escapeHTML(c.room)}</span></p><div class="card-actions"><button class="button secondary view-button" data-id="${c.id}">${icon('eye')}View</button><button class="button control-button" data-id="${c.id}">${icon('pointer')}Remote control</button><button class="icon-button edit-button" data-id="${c.id}" aria-label="Edit ${escapeHTML(c.name)}" title="Edit computer">${icon('edit')}</button></div></div></article>`).join('');
   $('#computer-grid').querySelectorAll('.view-button').forEach(b => b.onclick = () => openRemote(b.dataset.id, 'view'));
   $('#computer-grid').querySelectorAll('.control-button').forEach(b => b.onclick = () => openRemote(b.dataset.id, 'control'));
   $('#computer-grid').querySelectorAll('.edit-button').forEach(b => b.onclick = () => editComputer(b.dataset.id));
+  classroomActions.refresh();
   const empty = list.length === 0; $('#empty-state').hidden = !empty; $('#computer-grid').hidden = empty;
   $('#empty-title').textContent = state.computers.length ? 'No computers match your search.' : 'Make room for your classroom.';
   $('#empty-description').textContent = state.computers.length ? 'Try another name or choose a different classroom.' : 'Add your first Veyon computer to get started.';
@@ -129,7 +132,7 @@ async function connectOverview(computers) {
   }
 }
 async function loadClassroom() {
-  const data = await api('/api/computers'); Object.assign(state,{ computers:data.computers, ready:data.ready, demo:data.demo });
+  const data = await api('/api/computers'); Object.assign(state,{ computers:data.computers, ready:data.ready, demo:data.demo, maxUploadBytes:data.maxUploadBytes });
   $('#demo-banner').hidden = !state.demo; $('#network-label').textContent = state.demo ? 'Sample workspace' : 'Local gateway';
   $('.local-badge').innerHTML = `<span class="dot"></span>${state.demo ? 'Sample mode' : 'School network'}`;
   state.monitoring = state.demo; render();
@@ -155,7 +158,7 @@ document.querySelectorAll('.close-dialog').forEach(b => b.onclick=()=>b.closest(
 function editComputer(id) {
   if(state.demo){toast('The sample directory is read only. See Connection & help to set up your computers.');return;}
   const computer=state.computers.find(c=>c.id===id), form=$('#computer-form'); form.reset();
-  for(const key of ['id','name','host','port','room']) if(computer) form.elements[key].value=computer[key];
+  for(const key of ['id','name','host','port','room','mac']) if(computer) form.elements[key].value=computer[key] ?? '';
   if(!computer) form.elements.room.value=state.room || '';
   $('#computer-dialog-title').textContent=computer?'Edit computer':'Add a computer';
   $('#delete-computer').hidden=!computer; $('#computer-error').textContent=''; $('#computer-dialog').showModal();
@@ -168,7 +171,7 @@ async function saveRoster(values) {
 }
 $('#computer-form').onsubmit=async e=>{
   e.preventDefault(); const form=new FormData(e.target), id=form.get('id') || crypto.randomUUID();
-  const computer={id,name:form.get('name'),host:form.get('host').trim(),port:Number(form.get('port')),room:form.get('room')};
+  const computer={id,name:form.get('name'),host:form.get('host').trim(),port:Number(form.get('port')),room:form.get('room'),mac:form.get('mac').trim()};
   const values=[...state.computers], index=values.findIndex(c=>c.id===id); if(index<0)values.push(computer);else values[index]=computer;
   e.submitter.disabled=true;
   try{await saveRoster(values);$('#computer-dialog').close();toast('Classroom directory saved.');}catch(error){$('#computer-error').textContent=error.message;}finally{e.submitter.disabled=false;}
@@ -266,6 +269,9 @@ function demoScreen(target,computer,control){
   canvas.addEventListener('keydown',onKey);canvas.addEventListener('pointerdown',onPointer);draw();
   return{disconnect(){alive=false;canvas.removeEventListener('keydown',onKey);canvas.removeEventListener('pointerdown',onPointer);canvas.remove();},focus(){canvas.focus();},sendCtrlAltDel(){entry='Ctrl + Alt + Delete (simulated)';draw();}};
 }
+
+const classroomActions=setupClassroomActions({state,filtered,api,makeRFB,escapeHTML});
+$('#remote-screenshot').onclick=()=>{if(state.remote)classroomActions.open('screenshot',[state.remote.computer]);};
 
 try{
   const session=await api('/api/session');state.demo=session.demo;

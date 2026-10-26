@@ -4,6 +4,30 @@ namespace Classroom;
 
 final class Wire
 {
+    public static function uuid(string $uuid): string
+    {
+        $hex = str_replace(['-', '{', '}'], '', $uuid);
+        if (!preg_match('/^[a-f0-9]{32}$/iD', $hex)) throw new \InvalidArgumentException('Invalid feature UUID.');
+        return pack('NC', 30, 0) . hex2bin($hex);
+    }
+    public static function boolean(bool $value): string { return pack('NCC', 1, 0, (int)$value); }
+    public static function strings(array $values): string
+    {
+        $data = pack('NCN', 11, 0, count($values));
+        foreach ($values as $value) $data .= substr(self::variant($value), 5);
+        return $data;
+    }
+    /** Map values are already serialized QVariants; keys are plain QStrings. */
+    public static function map(array $values): string
+    {
+        $data = pack('NCN', 8, 0, count($values));
+        foreach ($values as $key => $value) $data .= substr(self::variant((string)$key), 5) . $value;
+        return $data;
+    }
+    public static function feature(string $uuid, int $command = 0, array $arguments = []): string
+    {
+        return chr(41) . self::message([self::uuid($uuid), self::variant($command), self::map($arguments)]);
+    }
     public static function variant(int|string $value, bool $bytes = false): string
     {
         if (is_int($value)) return pack('NCN', 2, 0, $value);

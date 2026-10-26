@@ -2,6 +2,8 @@
 
 A web dashboard for viewing and remotely controlling Veyon classroom computers.
 
+Classroom actions include screenshots, text messages, screen lock/unlock, opening websites, running programs, Wake-on-LAN, restart/shutdown/logoff, and file distribution. Select individual cards or use **Select classroom / filtered list**, then **Actions for selected PCs**. Selection spans pages within the current classroom/search. Changing the filter removes selections outside that filter. Each target gets its own result; **Stop remaining** stops queued targets, while in-flight commands may still finish.
+
 ## Requirements
 
 - Linux/Unix server with PHP 8.2+, Composer, and the OpenSSL, PDO SQLite, iconv, PCNTL and POSIX extensions.
@@ -72,6 +74,18 @@ Restart the gateway after changing its configuration: `sudo systemctl restart ve
 If you change `data_directory` later, rerun setup to regenerate the service, or update its `ReadWritePaths` manually and reload systemd before restarting.
 
 ## Maintenance
+
+### Classroom actions
+
+- Screenshots use view-only connections through the gateway and wait for a rendered frame. One image downloads as PNG; multiple images download in a ZIP. The full-screen viewer also has a Screenshot button. Screenshot files stay in the browser until downloaded or the action dialog closes.
+- Messages, lock/unlock, websites, programs, restart, shutdown and logoff use authenticated Veyon feature messages sent by PHP on the web server. No additional public ports or Apache proxy rules are required. The web server must reach the PCs' Veyon ports and read the configured Veyon credentials. Screen viewing continues through the existing WebSocket gateway.
+- Restart, shutdown and logoff require confirmation in the action dialog. Unsaved work can be lost. Programs run in the target's user session. Use **Unlock screens** to end a screen lock.
+- **Sent** means a command was written to an authenticated Veyon connection. Veyon does not acknowledge execution for these actions. Client feature availability, access-control rules and an active user session determine whether they take effect. Verify operation on your deployed Veyon versions before using classroom-wide actions.
+- Wake-on-LAN requires a MAC address in each computer's Edit dialog (also preserved in JSON import/export), enabled firmware/network-adapter settings, the PHP sockets extension in the web server, and a reachable broadcast network. Configure `wake_broadcast` in `config/local.php` for your subnet if the default `255.255.255.255` is unsuitable. A sent packet does not confirm the PC powered on. Wake packets may not cross VLANs without network support.
+- File distribution sends one file per batch to Veyon's configured destination on each PC, normally the active user's home directory. Overwriting and opening the received file are optional and off by default. Veyon's distribution protocol does not acknowledge successful disk writes; **Sent** is not proof the file was saved. Check the client when a file already exists or a directory is not writable. Transfers can be partially delivered if the connection fails.
+- The default application upload limit is 20 MiB (`max_upload_bytes`, configurable up to 100 MiB). Set PHP's **web-server** `upload_max_filesize` to `20M` and `post_max_size` to at least `24M` (adjust for your chosen limit), then reload the PHP handler/Apache. An upstream proxy may impose its own upload limit. Uploads use PHP temporary files and are removed by PHP when each request ends.
+
+Deploy the complete updated `web/public` and `web/php` files together. The MAC-address database column is added automatically without replacing the existing roster. Back up the database before deployment as usual. Existing local configuration files continue to work with defaults for the new settings. No screen-broadcast feature is included.
 
 ### Hosting under an existing website
 

@@ -8,6 +8,7 @@ import path from 'node:path';
 import { tmpdir, userInfo } from 'node:os';
 import { WebSocket } from 'ws';
 import { fakeVeyon, privateKey } from './fixture.js';
+import { decodeFeatures } from './reference-protocol.js';
 
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function port(){const server=net.createServer();server.listen(0,'127.0.0.1');await once(server,'listening');const value=server.address().port;await new Promise(resolve=>server.close(resolve));return value;}
@@ -53,6 +54,36 @@ for(const method of ['key','logon'])test(`${apache?'Apache/PHP-FPM':'PHP HTTP'} 
     assert.equal((await request('/api/login','POST',{username:'teacher',password:'wrong'})).status,401);
     const response=await request('/api/login','POST',{username:'teacher',password:'integration-password'});assert.equal(response.status,200);cookie=response.headers.get('set-cookie').split(';')[0];assert.match(response.headers.get('set-cookie'),/HttpOnly/i);assert.match(response.headers.get('set-cookie'),/SameSite=Strict/i);
     assert.equal((await request('/api/computers','PUT',[{id:'lab',name:'Lab',host:'127.0.0.1',port:fake.port,room:'Lab'}])).status,200);
+    // HTTP actions authenticate independently and preserve Veyon's Qt types.
+    assert.equal((await request('/api/actions','POST',{computerId:'lab',action:'reboot'})).status,400);
+    assert.equal((await request('/api/actions','POST',{computerId:'missing',action:'lock'})).status,404);
+    assert.equal((await request('/api/actions','POST',{computerId:'lab',action:'website',url:'javascript:alert(1)'})).status,400);
+    assert.equal((await request('/api/actions','POST',{computerId:'lab',action:'lock'},'https://attacker.example')).status,403);
+    const actions=[
+      ['message',{text:'Hello <class> — café'},'e75ae9c8-ac17-4d00-8f0d-019348346208',0,{'0':'Hello &lt;class&gt; — café','1':1,'2':'Message from teacher'}],
+      ['lock',{},'ccb535a2-1d24-4cc1-a709-8b47d2b2ac79',0,{}],
+      ['unlock',{},'ccb535a2-1d24-4cc1-a709-8b47d2b2ac79',1,{}],
+      ['website',{url:'https://school.example/lesson'},'8a11a75d-b3db-48b6-b9cb-f8422ddd5b0c',0,{'1':['https://school.example/lesson']}],
+      ['program',{program:'notepad.exe'},'da9ca56a-b2ad-4fff-8f8a-929b2927b442',0,{'0':['notepad.exe']}],
+      ['reboot',{confirmed:true},'4f7d98f0-395a-4fff-b968-e49b8d0f748c',0,{}],
+      ['shutdown',{confirmed:true},'6f5a27a0-0e2f-496e-afcc-7aae62eede10',0,{}],
+      ['logoff',{confirmed:true},'7311d43d-ab53-439e-a03a-8cb25f7ed526',0,{}],
+    ];
+    for(const [action,params,uuid,command,args] of actions){
+      input.length=0;const response=await request('/api/actions','POST',{computerId:'lab',action,...params});
+      assert.equal(response.status,200,await response.clone().text());assert.equal((await response.json()).status,'sent');await delay(20);
+      assert.deepEqual(decodeFeatures(Buffer.concat(input)),[[uuid,command,args]]);
+    }
+    input.length=0;
+    const fileBytes=Buffer.alloc(140000,0x29);fileBytes.write('lesson content');
+    const form=new FormData();form.set('computerId','lab');form.set('file',new Blob([fileBytes]),'lesson.txt');form.set('overwrite','1');form.set('open','1');
+    const uploaded=await fetch(origin+'/api.php?route=%2Fapi%2Ffiles',{method:'POST',headers:{Origin:origin,Cookie:cookie},body:form});assert.equal(uploaded.status,200,await uploaded.text());await delay(30);
+    const fileFrames=decodeFeatures(Buffer.concat(input));assert.deepEqual(fileFrames.map(f=>f[1]),[0,1,1,1,3]);
+    const transferId=fileFrames[0][2]['0'];assert.match(transferId,/^[a-f0-9-]{36}$/);
+    assert.deepEqual(fileFrames[0][2],{'0':transferId,'1':'lesson.txt','4':true});
+    assert.ok(fileFrames.every(f=>f[0]==='4a70bd5a-fab2-4a4b-a92a-a1e81d2b75ed'&&f[2]['0']===transferId));
+    assert.deepEqual(Buffer.concat(fileFrames.slice(1,-1).map(f=>f[2]['2'])),fileBytes);
+    assert.deepEqual(fileFrames.at(-1)[2],{'0':transferId,'1':'lesson.txt','3':true});input.length=0;
     const readonly=await open('view'),key=Buffer.from([4,1,0,0,0,0,0,65]),pointer=Buffer.from([5,1,0,10,0,20]),update=Buffer.from([3,0,0,0,0,0,0,2,0,2]);
     readonly.ws.send(Buffer.concat([key,pointer,update]));await delay(80);assert.deepEqual(Buffer.concat(input),update);input.length=0;
     const frame=Buffer.alloc(32);frame.writeUInt16BE(1,2);frame.writeUInt16BE(2,8);frame.writeUInt16BE(2,10);frame.fill(255,16);fake.sendFrame(frame);assert.deepEqual(await readonly.next(),frame);
@@ -62,6 +93,7 @@ for(const method of ['key','logon'])test(`${apache?'Apache/PHP-FPM':'PHP HTTP'} 
     assert.equal((await request('/api/computers','PUT',[{id:'lab',name:'Lab updated',host:'127.0.0.1',port:fake.port,room:'Lab'}])).status,200);await revoked;
     const final=await open('control'),closed=once(final.ws,'close');assert.equal((await request('/api/logout','POST',{})).status,200);await closed;
     assert.equal((await request('/api/computers')).status,401);assert.deepEqual(fake.errors,[]);
+    assert.equal((await request('/api/actions','POST',{computerId:'lab',action:'lock'})).status,401);
     assert.doesNotMatch(logs, /Fatal error|Warning:|Deprecated:/);
   }finally{for(const ws of sockets)ws.terminate();for(const child of children)child.kill('SIGTERM');await Promise.all(children.map(async child=>{if(child.exitCode===null)await once(child,'exit');}));await fake.close();await rm(dir,{recursive:true,force:true});}
 });

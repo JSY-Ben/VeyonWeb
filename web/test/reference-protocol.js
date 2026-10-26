@@ -13,19 +13,30 @@ export function message(...values) { const data = Buffer.concat(values.map(varia
 export function decodeVariants(data) {
   const result = []; let offset = 0;
   function need(n) { if (offset + n > data.length) throw new Error('Truncated Veyon authentication message.'); }
-  while (offset < data.length) {
+  function string(){need(4);const n=data.readUInt32BE(offset);offset+=4;need(n);const s=Buffer.from(data.subarray(offset,offset+n)).swap16().toString('utf16le');offset+=n;return s;}
+  function value() {
     need(5); const type = data.readUInt32BE(offset); offset += 5;
-    if (type === 2) { need(4); result.push(data.readInt32BE(offset)); offset += 4; }
+    if(type===1){need(1);return data[offset++]!==0;}
+    if(type===30){need(16);const h=data.subarray(offset,offset+16).toString('hex');offset+=16;return `${h.slice(0,8)}-${h.slice(8,12)}-${h.slice(12,16)}-${h.slice(16,20)}-${h.slice(20)}`;}
+    if(type===8||type===11){need(4);const n=data.readUInt32BE(offset);offset+=4;const output=type===8?{}:[];for(let i=0;i<n;i++){if(type===8){const key=string();output[key]=value();}else output.push(string());}return output;}
+    if (type === 2) { need(4); const number=data.readInt32BE(offset); offset += 4; return number; }
     else if (type === 10 || type === 12) {
       need(4); const length = data.readUInt32BE(offset); offset += 4;
-      if (length === 0xffffffff) { result.push(type === 10 ? '' : Buffer.alloc(0)); continue; }
+      if (length === 0xffffffff) return type === 10 ? '' : Buffer.alloc(0);
       if (length > 65536 || (type === 10 && length % 2)) throw new Error('Invalid Veyon authentication field.');
       need(length); const bytes = Buffer.from(data.subarray(offset, offset + length)); offset += length;
-      result.push(type === 10 ? bytes.swap16().toString('utf16le') : bytes);
+      return type === 10 ? bytes.swap16().toString('utf16le') : bytes;
     } else throw new Error(`Unsupported authentication field type ${type}.`);
   }
+  while (offset < data.length) result.push(value());
   return result;
 }
+export function decodeFeatures(data){
+  const frames=[];let offset=0;
+  while(offset<data.length){assertFeature(data[offset++]===41,'Feature message type');const length=data.readUInt32BE(offset);offset+=4;const bytes=data.subarray(offset,offset+length);assertFeature(bytes.length===length,'Feature message length');frames.push(decodeVariants(bytes));offset+=length;}
+  return frames;
+}
+function assertFeature(value,message){if(!value)throw new Error(message);}
 
 export class SocketReader {
   constructor(socket) {

@@ -13,8 +13,10 @@ final class Config
             'origin' => 'http://127.0.0.1:8080', 'teacher_username' => 'teacher', 'teacher_password_hash' => '',
             'base_path' => null, 'data_directory' => dirname(__DIR__) . '/data',
             'gateway_listen' => 'websocket://127.0.0.1:9001', 'websocket_url' => '/remote',
+            'wake_broadcast' => '255.255.255.255', 'max_upload_bytes' => 20971520,
             'demo' => false, 'veyon' => ['method' => 'key', 'username' => 'teacher', 'key_name' => 'teacher', 'private_key_file' => '', 'password' => ''],
         ], $values);
+        if (!is_int($config['max_upload_bytes']) || $config['max_upload_bytes'] < 1 || $config['max_upload_bytes'] > 104857600) throw new \RuntimeException('max_upload_bytes must be between 1 and 104857600.');
         // Direct PHP entry points work in an existing site without rewrites or aliases.
         if ($config['base_path'] === null) {
             $script = PHP_SAPI === 'cli' ? '' : ($_SERVER['SCRIPT_NAME'] ?? '');

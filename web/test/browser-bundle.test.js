@@ -10,6 +10,16 @@ test('browser bundle loads without CommonJS globals', async () => {
   try {
     const {default:RFB}=await import('../public/veyon-rfb.js');
     assert.equal(typeof RFB,'function');
+    const base=Object.getPrototypeOf(RFB.prototype),originalFrame=base._framebufferUpdate;
+    const snapshot=Object.create(RFB.prototype);let flushed=false,notified=false;
+    snapshot._FBU={rects:0};snapshot._display={flush:async()=>{flushed=true;}};
+    snapshot.dispatchEvent=event=>{assert.equal(event.type,'framebufferupdate');assert.ok(flushed);notified=true;};
+    try{
+      base._framebufferUpdate=()=>true;
+      assert.equal(snapshot._framebufferUpdate(),true);
+      assert.equal(notified,false,'frame notification waits for display flush');
+      await Promise.resolve();assert.equal(snapshot.hasFrame,true);assert.ok(notified);
+    }finally{base._framebufferUpdate=originalFrame;}
     // Simulate every split in a feature event followed by another server message.
     const feature=Buffer.from([41,0,0,0,4,0,41,255,1]);
     for(let split=1;split<feature.length;split++) {
