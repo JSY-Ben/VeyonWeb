@@ -1,6 +1,15 @@
 import {applyAppearance,defaultAppearance} from './appearance.js?v=appearance-20261026';
 const $=selector=>document.querySelector(selector);
 const labels={gateway_workers:'Gateway processes (restart gateway to apply)',overview_refresh_seconds:'Default refresh interval (seconds)',overview_max_connections:'Maximum simultaneous previews',overview_stagger_ms:'Gap between starts (milliseconds)',overview_retry_seconds:'Retry unavailable PCs (seconds)',connection_timeout_seconds:'Gateway TCP timeout (seconds)',preview_timeout_seconds:'Preview / authentication timeout (seconds)'};
+const descriptions={
+  gateway_workers:'How many server processes handle remote sessions and desktop previews. More processes can help busy classrooms, but use more server memory. Restart veyon-gateway after changing this.',
+  overview_refresh_seconds:'How long to wait after a successful desktop picture before updating that computer again. Lower values show newer pictures and use more network and server resources. Each browser can choose its own interval.',
+  overview_max_connections:'How many desktop pictures one browser can capture at the same time. Higher values can load the classroom faster, but put more load on the server and network.',
+  overview_stagger_ms:'The minimum gap between starting desktop captures in one browser. 1,000 milliseconds is one second. A larger gap spreads out connection requests; zero allows them to start together, up to the simultaneous preview limit.',
+  overview_retry_seconds:'How long to wait before trying a computer again after a failed preview. Larger values reduce repeated requests to unavailable computers. A first connection timeout gets one earlier retry.',
+  connection_timeout_seconds:'How long the server waits to make the initial network connection to a computer. Increase this if computers on a slow network are being marked unavailable too quickly.',
+  preview_timeout_seconds:'How long to allow a remote session or preview to connect and authenticate. Desktop previews then get the same amount of time again to receive their first picture. Increase this for slow computers; lower values report failures sooner.',
+};
 const ranges={gateway_workers:[1,16],overview_refresh_seconds:[2,3600],overview_max_connections:[1,10],overview_stagger_ms:[0,10000],overview_retry_seconds:[2,3600],connection_timeout_seconds:[1,120],preview_timeout_seconds:[1,120]};
 
 export function setupAdminSettings({state,api,escapeHTML,onSessionRevoked,onSettingsChanged}){
@@ -49,7 +58,7 @@ export function setupAdminSettings({state,api,escapeHTML,onSessionRevoked,onSett
       appearance={...defaultAppearance,...Object.fromEntries(Object.keys(defaultAppearance).map(name=>[name,settingsData.settings[name]??defaultAppearance[name]]))};
       const appearanceForm=$('#appearance-form');for(const name of ['app_name','primary_colour','theme'])appearanceForm.elements[name].value=appearance[name];
       renderImages();
-      $('#web-setting-fields').innerHTML=Object.entries(settingsData.settings).filter(([name])=>ranges[name]).map(([name,value])=>`<label>${labels[name]}<input type="number" name="${name}" value="${value}" min="${ranges[name][0]}" max="${ranges[name][1]}" step="1" required></label>`).join('');
+      $('#web-setting-fields').innerHTML=Object.entries(settingsData.settings).filter(([name])=>ranges[name]).map(([name,value])=>`<label>${labels[name]}<input type="number" name="${name}" value="${value}" min="${ranges[name][0]}" max="${ranges[name][1]}" step="1" aria-describedby="setting-help-${name}" required><small id="setting-help-${name}">${descriptions[name]}</small></label>`).join('');
     }catch(error){$('#settings-error').textContent=error.message;}finally{dialog.removeAttribute('aria-busy');dialog.querySelectorAll('[data-settings-section]').forEach(section=>section.inert=false);}
   }
   function close(){if(dialog.open)dialog.close();form.reset();users=[];rooms=[];$('#users-list').replaceChildren();}

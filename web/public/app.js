@@ -1,7 +1,7 @@
 import {classroomFromURL,classroomURL} from './classroom-url.js?v=classroom-url-20261026';
 import {applyAppearance} from './appearance.js?v=appearance-20261026';
 import RFB from './veyon-rfb.js?v=snapshot-pixels-20261026';
-import {setupAdminSettings} from './admin-settings.js?v=gateway-workers-20261026';
+import {setupAdminSettings} from './admin-settings.js?v=connection-help-20261026';
 import {setupClassroomActions} from './classroom-actions.js?v=preview-start-20261026';
 import {captureDesktop,SnapshotOverview} from './snapshots.js?v=preview-start-20261026';
 const appBase = new URL('.', import.meta.url);
@@ -294,7 +294,6 @@ $('#confirm-import').onclick=async()=>{try{await saveRoster(pendingImport);$('#r
 
 async function openRemote(id, mode) {
   const computer=state.computers.find(c=>c.id===id);if(!computer)return;
-  stopOverview();
   const remote={computer,mode,rfb:null,cancelled:false};state.remote=remote;
   $('#remote-name').textContent=computer.name;$('#remote-host').textContent=`${computer.host}:${computer.port} · ${computer.room}`;
   $('#remote-screen').replaceChildren();$('#remote-overlay').hidden=false;$('#remote-overlay').innerHTML='<span class="spinner"></span><strong>Connecting to computer…</strong>';
@@ -325,9 +324,12 @@ function updateRemoteToolbar(){
   $('#remote-input-note').textContent=control?'Click the screen to focus · Keyboard and mouse enabled':'View only · Keyboard and mouse disabled';$('#send-cad').disabled=true;
 }
 function disconnectRemote(){if(state.remote){state.remote.cancelled=true;state.remote.rfb?.disconnect();state.remote=null;}$('#remote-screen').replaceChildren();}
-function closeRemote(){disconnectRemote();if($('#remote-dialog').open)$('#remote-dialog').close();}
-$('#remote-close').onclick=()=>{closeRemote();render();};
-$('#remote-dialog').addEventListener('cancel',e=>{e.preventDefault();closeRemote();render();});
+function closeRemote(){
+  disconnectRemote();if($('#remote-dialog').open)$('#remote-dialog').close();
+  if(state.monitoring&&!document.hidden&&!overviewSnapshots?.session)connectOverview(currentPage());
+}
+$('#remote-close').onclick=closeRemote;
+$('#remote-dialog').addEventListener('cancel',e=>{e.preventDefault();closeRemote();});
 $('#remote-mode').onclick=()=>{if(!state.remote)return;const{computer,mode}=state.remote;disconnectRemote();openRemote(computer.id,mode==='control'?'view':'control');};
 $('#send-cad').onclick=()=>{if(state.remote?.mode==='control'){state.remote.rfb?.sendCtrlAltDel();state.remote.rfb?.focus?.();}};
 $('#remote-fullscreen').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await $('#remote-dialog').requestFullscreen();}catch{toast('Full screen is unavailable in this browser.');}};
