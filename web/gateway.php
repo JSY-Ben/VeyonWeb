@@ -34,15 +34,23 @@ $worker->onWorkerStart = function () use (&$db,$config,&$bridges,&$authorization
 };
 $worker->onWebSocketConnect = function (TcpConnection $connection,Request $request) use (&$db,$config,&$authorizations): void {
     try {
-        if ($request->path() !== '/remote' || $request->header('origin') !== $config['origin'] || count($authorizations) >= 128) throw new \RuntimeException('Request denied.');
+        if ($request->path() !== '/remote') throw new \RuntimeException('Proxy path mismatch: forward the WebSocket request to /remote.');
+        if ($request->header('origin') !== $config['origin']) throw new \RuntimeException('Origin mismatch: check origin in config/local.php and restart the gateway.');
+        if (count($authorizations) >= 128) throw new \RuntimeException('Gateway connection limit reached.');
         $ticket = $request->get('ticket',''); $cookie = $request->cookie('classroom','');
-        if (!is_string($ticket) || !is_string($cookie)) throw new \RuntimeException('Invalid session.');
+        if (!is_string($ticket) || !preg_match('/^[a-f0-9]{64}$/D', $ticket)) throw new \RuntimeException('Missing or malformed connection ticket.');
+        if (!is_string($cookie) || !preg_match('/^[a-f0-9]{64}$/D', $cookie)) throw new \RuntimeException('Missing or malformed classroom cookie: sign out and sign in again; check cookie path and proxy cookie forwarding.');
         $auth = $db->consumeTicket($ticket,$cookie);
-        if (!$auth) throw new \RuntimeException('Invalid session.');
+        if (!$auth) throw new \RuntimeException('Session or ticket invalid: check that the website and gateway use the same database; tickets expire after 30 seconds and can only be used once.');
         if (count(array_filter($authorizations,fn($a) => $a['session_id'] === $auth['session_id'])) >= 64) throw new \RuntimeException('Too many sessions.');
         $connection->websocketType = Websocket::BINARY_TYPE_ARRAYBUFFER;
         $authorizations[$connection->id] = $auth;
-    } catch (\Throwable $error) { $connection->close("HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n",true); }
+    } catch (\Throwable $error) {
+        // Log only controlled rejection reasons, never cookies, tickets or query strings.
+        $reason = get_class($error) === \RuntimeException::class ? $error->getMessage() : 'Internal session validation error; check database access and server configuration.';
+        error_log('Veyon gateway handshake rejected: ' . $reason);
+        $connection->close("HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n",true);
+    }
 };
 $worker->onWebSocketConnected = function (TcpConnection $connection) use (&$bridges,&$authorizations,$config): void {
     if (!isset($authorizations[$connection->id])) return;
