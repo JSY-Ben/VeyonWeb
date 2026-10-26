@@ -2,11 +2,19 @@ import {classroomFromURL,classroomURL} from './classroom-url.js?v=classroom-url-
 import {applyAppearance} from './appearance.js?v=appearance-20261026';
 import RFB from './veyon-rfb.js?v=snapshot-pixels-20261026';
 import {setupAdminSettings} from './admin-settings.js?v=connection-help-20261026';
-import {setupClassroomActions} from './classroom-actions.js?v=action-buttons-20261026';
+import {setupClassroomActions} from './classroom-actions.js?v=action-icons-20261026';
 import {captureDesktop,SnapshotOverview} from './snapshots.js?v=preview-start-20261026';
 const appBase = new URL('.', import.meta.url);
 const $ = selector => document.querySelector(selector);
 const icons = {
+  message:'<path d="M21 11a8 8 0 0 1-8 8H6l-4 3V11a9 9 0 0 1 19 0Z"/><path d="M7 9h10M7 13h6"/>',
+  unlock:'<rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0M12 14v3"/>',
+  globe:'<circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18"/>',
+  program:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 8h18m-14 4 3 3-3 3m6 0h4"/>',
+  camera:'<path d="M8 6l2-3h4l2 3h4a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1Z"/><circle cx="12" cy="13" r="4"/>',
+  wake:'<path d="m13 2-9 12h7l-1 8 10-12h-8z"/>',
+  restart:'<path d="M20 7a9 9 0 1 0 1 8M20 2v6h-6"/>',
+  power:'<path d="M12 2v10M6 5a9 9 0 1 0 12 0"/>',
   list:'<path d="M9 5h12M9 12h12M9 19h12M3 5h1M3 12h1M3 19h1"/>',
   grid:'<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
   monitor:'<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/>',

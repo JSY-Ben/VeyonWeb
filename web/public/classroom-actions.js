@@ -1,7 +1,7 @@
 import {download,safeName,screenshotZip} from './downloads.js';
 import {captureDesktop,waitForFrame} from './snapshots.js?v=preview-start-20261026';
 const $=s=>document.querySelector(s);
-const labels={screenshot:'Capture screenshots',message:'Send message',lock:'Lock screens',unlock:'Unlock screens',website:'Open website',program:'Run program',wake:'Wake computers',reboot:'Restart computers',shutdown:'Shut down computers',logoff:'Log off users',files:'Distribute file'};
+const labels={screenshot:'Capture screenshots',message:'Send message',lock:'Lock screens',unlock:'Unlock screens',website:'Open Website',program:'Open Program',wake:'Wake computers',reboot:'Restart computers',shutdown:'Shut down computers',logoff:'Log off users',files:'Send Files'};
 const destructive=new Set(['reboot','shutdown','logoff']);
 
 export function setupClassroomActions({state,filtered,api,makeRFB,escapeHTML}) {

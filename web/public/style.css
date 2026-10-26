@@ -116,7 +116,8 @@ main{margin-left:280px;width:calc(100% - 280px);min-width:0}
 .selection-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:16px 20px;border-block:1px solid var(--line)}
 .selection-toolbar>div{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .selection-toolbar .classroom-action-buttons{flex-basis:100%;gap:6px}
-.classroom-action-buttons .button{min-height:44px;padding:8px 10px;font-size:14px}
+.classroom-action-buttons .button{min-height:44px;padding:8px 10px;font-size:14px;gap:6px}
+.classroom-action-buttons svg{width:18px;height:18px}
 #selection-count{font-size:15px;color:var(--muted)}
 
 .computer-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,var(--card-width,360px)),1fr));gap:20px;padding:20px}
