@@ -22,12 +22,13 @@ export function setupClassroomActions({state,filtered,api,makeRFB,escapeHTML}) {
   }
   function open(action,computers=state.computers.filter(c=>selected.has(c.id))){
     if(busy||!computers.length)return;
-    targets=[...computers];form.reset();$('#action-kind').value=action;$('#action-progress').textContent='';
+    targets=[...computers];form.reset();$('#action-kind').value=state.canManage?action:'screenshot';$('#action-progress').textContent='';
     $('#action-results').replaceChildren();clearShots();updateForm();dialog.showModal();
   }
   function clearShots(){for(const url of objectURLs)URL.revokeObjectURL(url);objectURLs=[];shots=[];$('#download-screenshots').hidden=true;}
   function updateForm(){
     const action=$('#action-kind').value;
+    $('#action-kind').querySelectorAll('option').forEach(option=>{option.hidden=!state.canManage&&option.value!=='screenshot';option.disabled=option.hidden;});
     $('#action-title').textContent=labels[action];
     $('#action-submit').textContent=action==='screenshot'?'Capture screenshots':'Send to listed computers';
     $('#action-targets').textContent=`${targets.length} computer${targets.length===1?'':'s'}: ${targets.map(c=>c.name).join(', ')}`;
@@ -95,7 +96,7 @@ export function setupClassroomActions({state,filtered,api,makeRFB,escapeHTML}) {
   };
   $('#select-classroom').onclick=()=>{for(const c of filtered())selected.add(c.id);refresh();};
   $('#clear-selection').onclick=()=>{selected.clear();refresh();};
-  $('#classroom-action').onclick=()=>open('message');
+  $('#classroom-action').onclick=()=>open(state.canManage?'message':'screenshot');
   $('#action-kind').onchange=updateForm;
   $('#action-close').onclick=()=>{if(!busy)dialog.close();};
   $('#stop-actions').onclick=()=>{stopped=true;$('#stop-actions').disabled=true;$('#action-progress').textContent='Stopping after in-flight requests. Commands already sent cannot be recalled.';};

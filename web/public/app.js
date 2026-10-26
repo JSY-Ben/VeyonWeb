@@ -1,5 +1,6 @@
 import RFB from './veyon-rfb.js?v=snapshot-pixels-20261026';
-import {setupClassroomActions} from './classroom-actions.js?v=snapshot-pixels-20261026';
+import {setupAdminSettings} from './admin-settings.js?v=users-20261026';
+import {setupClassroomActions} from './classroom-actions.js?v=users-20261026';
 import {captureDesktop,SnapshotOverview} from './snapshots.js?v=snapshot-pixels-20261026';
 const appBase = new URL('.', import.meta.url);
 const $ = selector => document.querySelector(selector);
@@ -29,7 +30,7 @@ function icon(name) { return `<svg viewBox="0 0 24 24" fill="none" stroke="curre
 function hydrateIcons(scope = document) { scope.querySelectorAll('[data-icon]').forEach(el => el.innerHTML = icon(el.dataset.icon)); }
 hydrateIcons();
 const state = { computers: [], room: null, search: '', page: 0, pageSize: 12, monitoring: false, demo: false, ready: false, connections: new Map(), statuses: new Map(), generation: 0, remote: null, overviewRefreshSeconds: 30 };
-let toastTimer, pendingImport, overviewSnapshots;
+let toastTimer, pendingImport, overviewSnapshots, adminSettings;
 const snapshotURLs=new Map();
 const refreshStorageKey=`veyonweb-overview-refresh:${appBase.pathname}`;
 function toast(text) { $('#toast').textContent = text; $('#toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => $('#toast').hidden = true, 5000); }
@@ -52,7 +53,7 @@ function stopOverview() {
   state.connections.clear(); state.statuses.clear();
 }
 function clearSnapshots(){for(const url of snapshotURLs.values())URL.revokeObjectURL(url);snapshotURLs.clear();document.querySelectorAll('.snapshot-image').forEach(image=>image.remove());}
-function stopAll() { clearSnapshots();classroomActions.stop();state.monitoring = false; closeRemote(); stopOverview(); }
+function stopAll() { adminSettings?.close();document.querySelectorAll('dialog[open]').forEach(dialog=>dialog.close());clearSnapshots();classroomActions.stop();state.monitoring = false; closeRemote(); stopOverview(); }
 function renderNavigation() {
   $('#total-count').textContent = state.computers.length;
   $('#all-computers').classList.toggle('active', !state.room);
@@ -86,15 +87,15 @@ function render() {
   stopOverview(); clearSnapshots(); renderNavigation();
   const list = filtered(), page = currentPage();
   $('#view-count').textContent = list.length;
-  $('#computer-grid').innerHTML = page.map(c => `<article class="computer-card" id="computer-${c.id}"><label class="card-select"><input type="checkbox" class="select-computer" data-id="${c.id}" aria-label="Select ${escapeHTML(c.name)}">Select</label><div class="screen-wrap"><div class="thumbnail" id="screen-${c.id}"></div><div class="screen-placeholder">${icon('monitor')}<span>Ready to refresh</span></div><span class="screen-tag" hidden><span class="dot"></span>${state.demo ? 'SAMPLE PICTURE' : 'SNAPSHOT'}</span></div><div class="card-info"><div class="card-heading"><h3>${escapeHTML(c.name)}</h3><span class="computer-state"><span class="dot"></span>Not refreshed</span></div><p class="computer-address">${escapeHTML(c.host)} <span>· ${escapeHTML(c.room)}</span></p><div class="card-actions"><button class="button secondary view-button" data-id="${c.id}">${icon('eye')}View</button><button class="button control-button" data-id="${c.id}">${icon('pointer')}Remote control</button><button class="icon-button edit-button" data-id="${c.id}" aria-label="Edit ${escapeHTML(c.name)}" title="Edit computer">${icon('edit')}</button></div></div></article>`).join('');
+  $('#computer-grid').innerHTML = page.map(c => `<article class="computer-card" id="computer-${c.id}"><label class="card-select"><input type="checkbox" class="select-computer" data-id="${c.id}" aria-label="Select ${escapeHTML(c.name)}">Select</label><div class="screen-wrap"><div class="thumbnail" id="screen-${c.id}"></div><div class="screen-placeholder">${icon('monitor')}<span>Ready to refresh</span></div><span class="screen-tag" hidden><span class="dot"></span>${state.demo ? 'SAMPLE PICTURE' : 'SNAPSHOT'}</span></div><div class="card-info"><div class="card-heading"><h3>${escapeHTML(c.name)}</h3><span class="computer-state"><span class="dot"></span>Not refreshed</span></div><p class="computer-address">${escapeHTML(c.host)} <span>· ${escapeHTML(c.room)}</span></p><div class="card-actions"><button class="button secondary view-button" data-id="${c.id}">${icon('eye')}View</button><button class="button control-button" data-id="${c.id}">${icon('pointer')}Remote control</button>${state.canManage?`<button class="icon-button edit-button" data-id="${c.id}" aria-label="Edit ${escapeHTML(c.name)}" title="Edit computer">${icon('edit')}</button>`:''}</div></div></article>`).join('');
   $('#computer-grid').querySelectorAll('.view-button').forEach(b => b.onclick = () => openRemote(b.dataset.id, 'view'));
   $('#computer-grid').querySelectorAll('.control-button').forEach(b => b.onclick = () => openRemote(b.dataset.id, 'control'));
   $('#computer-grid').querySelectorAll('.edit-button').forEach(b => b.onclick = () => editComputer(b.dataset.id));
   classroomActions.refresh();
   const empty = list.length === 0; $('#empty-state').hidden = !empty; $('#computer-grid').hidden = empty;
-  $('#empty-title').textContent = state.computers.length ? 'No computers match your search.' : 'Make room for your classroom.';
-  $('#empty-description').textContent = state.computers.length ? 'Try another name or choose a different classroom.' : 'Add your first Veyon computer to get started.';
-  $('#empty-add').hidden = !!state.computers.length;
+  $('#empty-title').textContent = state.computers.length ? 'No computers match your search.' : (state.canManage?'Make room for your classroom.':'No classrooms available.');
+  $('#empty-description').textContent = state.computers.length ? 'Try another name or choose a different classroom.' : (state.canManage?'Add your first Veyon computer to get started.':'Ask your administrator to assign classrooms to your account.');
+  $('#empty-add').hidden = !state.canManage || !!state.computers.length;
   $('#page-label').textContent = `Page ${state.page+1} of ${Math.max(1,Math.ceil(list.length/state.pageSize))}`;
   $('#prev-page').disabled = state.page === 0; $('#next-page').disabled = (state.page+1)*state.pageSize >= list.length;
   $('#monitor-dot').classList.toggle('live', state.monitoring);
@@ -120,7 +121,7 @@ async function makeRFB(computer, target, mode, {signal} = {}) {
   return rfb;
 }
 function updateOverviewHint(){
-  $('#overview-status').textContent=state.monitoring?`Snapshot overview · each PC refreshes every ${state.overviewRefreshSeconds}s · Open View or Remote control for live video.`:'Configure Veyon credentials to load desktop pictures automatically.';
+  $('#overview-status').textContent=state.monitoring?`Snapshot overview · each PC refreshes every ${state.overviewRefreshSeconds}s · Open View or Remote control for live video.`:(state.canManage?'Configure Veyon credentials to load desktop pictures automatically.':'Your administrator needs to finish setting up classroom access.');
 }
 function connectOverview(computers) {
   overviewSnapshots?.stop();
@@ -175,12 +176,21 @@ async function loadClassroom() {
 }
 function showHelp() {
   $('#setup-status').textContent = state.demo ? 'Sample mode: screens and input are simulated. For real computers, configure Apache/PHP and run php scripts/setup.php on your school server.' : state.ready ? 'Veyon credentials are configured on the PHP gateway. Add a target and connect to verify access.' : 'Veyon credentials are missing. Configure config/local.php and restart the PHP gateway before connecting to real computers.';
+  if(!state.canManage&&!state.demo)$('#setup-status').textContent='Your administrator manages the gateway and classroom assignments. Open View for live viewing or Remote control to assist a computer.';
   $('#help-dialog').showModal();
 }
-async function showWorkspace(username) { $('#login').hidden = true; $('#workspace').hidden = false; $('#teacher-name').textContent = username; $('#teacher-initial').textContent = username[0]?.toUpperCase() || 'T'; await loadClassroom(); }
+async function showWorkspace(session) {
+  state.role=session.role;state.userId=session.userId;state.canManage=session.role==='admin'&&!session.demo;
+  $('#login').hidden=true;$('#workspace').hidden=false;$('#teacher-name').textContent=session.username;$('#teacher-initial').textContent=session.username[0]?.toUpperCase()||'U';
+  $('#user-role-label').textContent=session.role==='admin'?'Administrator':session.role==='supervisor'?'Supervisor':'Teacher';
+  for(const id of ['settings-button','add-computer','sidebar-add','roster-menu'])$(`#${id}`).hidden=!state.canManage;
+  $('#classroom-action').textContent=state.canManage?'Actions for selected PCs':'Screenshots for selected PCs';
+  $('#help-dialog .setup-steps').hidden=!state.canManage&&!session.demo;
+  await loadClassroom();
+}
 $('#login-form').onsubmit = async e => {
   e.preventDefault(); const button = e.submitter; button.disabled = true; $('#login-error').textContent = '';
-  try { const fields = new FormData(e.target); await api('/api/login',{method:'POST',body:JSON.stringify({username:fields.get('username'),password:fields.get('password')})}); e.target.elements.password.value=''; const session = await api('/api/session'); await showWorkspace(session.username); }
+  try { const fields = new FormData(e.target); await api('/api/login',{method:'POST',body:JSON.stringify({username:fields.get('username'),password:fields.get('password')})}); e.target.elements.password.value=''; const session = await api('/api/session'); await showWorkspace(session); }
   catch(error){ $('#login-error').textContent=error.message; } finally { button.disabled=false; }
 };
 $('#logout').onclick = async () => { try { await api('/api/logout',{method:'POST',body:'{}'}); stopAll(); $('#workspace').hidden=true; $('#login').hidden=false; } catch(error){toast(error.message);} };
@@ -197,6 +207,7 @@ $('#overview-refresh').onchange=event=>{
 for (const id of ['help-button','top-help','demo-setup']) $(`#${id}`).onclick=showHelp;
 document.querySelectorAll('.close-dialog').forEach(b => b.onclick=()=>b.closest('dialog').close());
 function editComputer(id) {
+  if(!state.canManage){toast('Only administrators can edit the classroom directory.');return;}
   if(state.demo){toast('The sample directory is read only. See Connection & help to set up your computers.');return;}
   const computer=state.computers.find(c=>c.id===id), form=$('#computer-form'); form.reset();
   for(const key of ['id','name','host','port','room','mac']) if(computer) form.elements[key].value=computer[key] ?? '';
@@ -311,14 +322,16 @@ function demoScreen(target,computer,control){
   return{disconnect(){alive=false;canvas.removeEventListener('keydown',onKey);canvas.removeEventListener('pointerdown',onPointer);canvas.remove();},focus(){canvas.focus();},sendCtrlAltDel(){entry='Ctrl + Alt + Delete (simulated)';draw();}};
 }
 
+adminSettings=setupAdminSettings({state,api,escapeHTML,onSessionRevoked:()=>{stopAll();state.canManage=false;$('#workspace').hidden=true;$('#login').hidden=false;$('#login-error').textContent='Your account changed. Please sign in again.';},onSettingsChanged:loadClassroom});
 const classroomActions=setupClassroomActions({state,filtered,api,makeRFB,escapeHTML});
 $('#remote-screenshot').onclick=()=>{if(state.remote)classroomActions.open('screenshot',[state.remote.computer]);};
 
 try{
   const session=await api('/api/session');state.demo=session.demo;
-  if(session.authenticated)await showWorkspace(session.username);
+  if(session.authenticated)await showWorkspace(session);
   else{
     $('#login').hidden=false;
+    if(session.setupRequired)$('#login-error').textContent='Run php scripts/setup.php on the server to create the first administrator.';
     if(session.demo){$('#login-fields').hidden=true;$('#login-fields').querySelectorAll('input').forEach(i=>i.required=false);$('#login-description').textContent='Explore the sample teacher dashboard. No real computers are connected.';$('.login-submit').innerHTML='Explore sample classroom <span aria-hidden="true">↗</span>';$('#login-note').textContent='Sample mode uses simulated screens and keyboard/mouse input.';}
   }
 }catch(error){$('#login').hidden=false;$('#login-error').textContent=error.message;}

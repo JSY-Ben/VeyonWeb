@@ -5,8 +5,9 @@ return [
     // null detects the URL directory automatically; override with '/VeyonWeb'
     // or '' for the site root if using a proxy or URL rewriting.
     'base_path' => null,
-    'teacher_username' => 'teacher',
-    // Run php scripts/setup.php to create a password hash.
+    'teacher_username' => 'admin',
+    // Legacy key names: used only to bootstrap the first administrator.
+    // Users and password changes are stored in SQLite after initial setup.
     'teacher_password_hash' => '',
     // Absolute directory for the SQLite database, gateway log and PID file.
     // Create it with www-data ownership and match the service's ReadWritePaths.

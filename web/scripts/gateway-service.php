@@ -47,6 +47,11 @@ function installGatewayService(array $config, string $configPath, string $accoun
         $run(['install', '-d', '-o', $account, '-g', $account, '-m', '0750', '--', $dataDirectory]);
         $run(['chown', 'root:' . $account, '--', $configPath]);
         $run(['chmod', '0640', '--', $configPath]);
+        $database=$config['database'] ?? rtrim($config['data_directory'],'/').'/classroom.sqlite';
+        foreach([$database,$database.'-wal',$database.'-shm'] as $file)if(is_file($file)){
+            $run(['chown',$account.':'.$account,'--',$file]);
+            $run(['chmod','0660','--',$file]);
+        }
         $run(['install', '-m', '0644', '--', $temporary, '/etc/systemd/system/veyon-gateway.service']);
         $run(['systemctl', 'daemon-reload']);
         $run(['systemctl', 'enable', 'veyon-gateway']);

@@ -39,7 +39,7 @@ The commands below assume Debian/Ubuntu, mod_php, systemd and an installation at
    php scripts/setup.php
    ```
 
-   Enter a teacher username, password and HTTPS site origin, such as `https://classroom.school.example`, without a trailing slash.
+   Enter an administrator username, password and HTTPS site origin, such as `https://classroom.school.example`, without a trailing slash. Setup creates or updates that account as an administrator in the database.
 
    On Linux, setup also prompts for the data directory and offers to install the systemd gateway service using `sudo`. Accept to create the directory with the chosen service account's ownership, generate the service with your installation and data paths, install it, reload systemd, enable it and restart it. The default service user and group are `www-data`. This replaces `/etc/systemd/system/veyon-gateway.service`; review any existing systemd overrides if they set paths. Existing classroom data is not moved automatically. If you accept this step, directory creation in step 3 and manual service installation in step 5 are already handled.
 
@@ -91,6 +91,26 @@ Restart the gateway after changing its configuration: `sudo systemctl restart ve
 If you change `data_directory` later, rerun setup to regenerate the service, or update its `ReadWritePaths` manually and reload systemd before restarting.
 
 ## Maintenance
+
+### Users, roles and web settings
+
+The first account is an **admin**. For existing installations, the configured `teacher_username` and `teacher_password_hash` are migrated once into an admin account, preserving the username and password. Existing browser sessions are cleared during migration; sign in again with that account. After migration, users and password changes live in SQLite. Changing the old config login fields does not override database users or restore deleted/demoted accounts.
+
+| Role | Classroom access | Allowed actions |
+| --- | --- | --- |
+| Admin | All classrooms | View/control, screenshots, all classroom commands, directory edits/import/export, users and web settings |
+| Supervisor | All classrooms | View/control and screenshots; cannot edit computers/classrooms, manage users/settings or issue classroom commands |
+| Teacher | Only classrooms assigned by an admin | View/control and screenshots in those classrooms; no directory, user, settings or classroom-command changes |
+
+Admins open **Settings** in the sidebar to create accounts, choose roles, assign teacher classrooms, disable/delete users and reset passwords. Usernames are unique without regard to case and cannot be renamed. New passwords require 12–72 bytes. A teacher with no assignments sees no computers. Assignments use the current classroom names: deleting or renaming a classroom removes its old grants, so assign the new classroom explicitly.
+
+Permissions are enforced in the API, ticket consumption and gateway session checks, not just by hiding controls. Changing a user's password, role, enabled status or classroom assignments ends that user's existing sessions and invalidates pending tickets. Active gateway connections close on the next check (normally within one second). The last enabled admin cannot be deleted, disabled or demoted. These website roles are independent of the shared Veyon credentials configured for the gateway.
+
+The same **Settings** page manages preview concurrency, spacing, refresh/retry intervals and connection timeouts. These settings are stored in SQLite and override `local.php` defaults. New gateway connections read them immediately; each browser picks up changes when its classroom is reloaded. Per-browser refresh-interval overrides still take precedence. Server credentials, site origin and routing remain in `local.php`/server configuration.
+
+For account recovery, run `php scripts/setup.php` on the server. It explicitly creates or resets the chosen account as an enabled admin. It is a server-side CLI operation; there is no unauthenticated web registration or password-reset endpoint. If service installation is declined, ensure the web process and gateway can write the database and its directory.
+
+**Upgrading:** back up the SQLite database and local config, stop `veyon-gateway`, deploy the updated PHP and browser files together, reload the PHP web handler if it caches deployed code, then restart `veyon-gateway`. The schema migrates automatically. Restarting the gateway is required so existing worker processes use the new authorization checks. Sign in with the previous login (now admin), then create the other users. Include the new `admin-settings.js` browser module in deployment.
 
 ### Classroom actions
 

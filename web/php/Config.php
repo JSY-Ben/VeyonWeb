@@ -51,7 +51,6 @@ final class Config
             throw new \RuntimeException('Configure origin as a complete origin, without a path or trailing slash.');
         }
         if ($url['scheme'] !== 'https' && !in_array($url['host'], ['127.0.0.1', 'localhost', '[::1]'], true)) throw new \RuntimeException('Network access requires an HTTPS origin.');
-        if (!$config['demo'] && !$config['teacher_password_hash']) throw new \RuntimeException('Teacher login is not configured. Run php scripts/setup.php.');
         if (!preg_match('~^websocket://(?:127\.0\.0\.1|localhost|\[::1\]):[0-9]+$~', $config['gateway_listen'])) throw new \RuntimeException('The gateway must bind to loopback behind Apache.');
         $ws = $config['websocket_url'];
         if ($ws !== '/remote' && !preg_match('~^ws://(?:127\.0\.0\.1|localhost):[0-9]+/remote$~', $ws)) throw new \RuntimeException('Invalid WebSocket URL.');

@@ -6,6 +6,8 @@ use Classroom\RfbFilter;
 use Classroom\Database;
 use Classroom\VeyonHandshake;
 use Classroom\Features;
+use Classroom\Users;
+use Classroom\Settings;
 
 $passed = 0;
 function check(bool $value,string $message): void { if (!$value) throw new RuntimeException($message); }
@@ -49,7 +51,7 @@ runTest('Invalid Veyon greetings remain rejected', function (): void {
 runTest('SQLite ticket consumption, logout and roster revocation',function (): void {
     $path=sys_get_temp_dir().'/veyon-php-unit-'.bin2hex(random_bytes(8)).'.sqlite';
     try {
-        $db=new Database($path);$cookie=bin2hex(random_bytes(32));$sessionId=hash('sha256',$cookie);
+        $db=new Database($path);(new Users($db))->bootstrap('teacher',password_hash('test-password',PASSWORD_DEFAULT));$cookie=bin2hex(random_bytes(32));$sessionId=hash('sha256',$cookie);
         $db->query('INSERT INTO sessions VALUES (?,?,?)',[$sessionId,'teacher',time()+100]);
         $db->saveRoster(Database::validateRoster([['id'=>'lab','name'=>'Lab','host'=>'lab.local','port'=>11100,'room'=>'Lab']]));
         $ticket=bin2hex(random_bytes(32));$db->query('INSERT INTO tickets VALUES (?,?,?,?,?,?)',[hash('sha256',$ticket),$sessionId,'lab','control',time()+30,$db->generation()]);
@@ -59,6 +61,43 @@ runTest('SQLite ticket consumption, logout and roster revocation',function (): v
         rejects(fn() => Database::validateRoster([['name'=>'Lab','room'=>'Lab','host'=>'http://bad/path','port'=>11100]]));
         $db=null;
     } finally {foreach ([$path,$path.'-wal',$path.'-shm'] as $file)if(is_file($file))unlink($file);}
+});
+runTest('User migration, role scope, ticket enforcement and administrator lockout protection', function (): void {
+    $emptyDb=new Database(':memory:');$firstUsers=new Users($emptyDb);
+    $firstId=$firstUsers->save(['username'=>'first','password'=>'first-account-password','role'=>'teacher','enabled'=>false]);
+    same($firstUsers->find('first')['role'],'admin');same((int)$firstUsers->find('first')['enabled'],1);
+    $path=sys_get_temp_dir().'/veyon-users-'.bin2hex(random_bytes(8)).'.sqlite';
+    try{
+        $db=new Database($path);$users=new Users($db);$hash=password_hash('legacy-password',PASSWORD_DEFAULT);
+        $db->query('INSERT INTO sessions VALUES (?,?,?)',[str_repeat('a',64),'teacher',time()+60]);
+        $users->bootstrap('teacher',$hash);same($users->find('teacher')['role'],'admin');same((int)$db->query('SELECT COUNT(*) FROM sessions')->fetchColumn(),0);
+        $users->bootstrap('other',$hash);same($users->find('other'),null);
+        $db->saveRoster(Database::validateRoster([['id'=>'a','name'=>'A','host'=>'a.local','port'=>11100,'room'=>'Room A'],['id'=>'b','name'=>'B','host'=>'b.local','port'=>11100,'room'=>'Room B']]));
+        $admin=(int)$users->find('teacher')['id'];
+        $teacher=$users->save(['username'=>'restricted','password'=>'restricted-password','role'=>'teacher','classrooms'=>['Room A']]);
+        $supervisor=$users->save(['username'=>'supervisor','password'=>'supervisor-password','role'=>'supervisor']);
+        rejects(fn()=>$users->save(['username'=>'RESTRICTED','password'=>'duplicate-password','role'=>'teacher']));
+        rejects(fn()=>$users->delete($admin));
+        rejects(fn()=>$users->save(['id'=>$admin,'username'=>'teacher','role'=>'supervisor']));
+        rejects(fn()=>$users->save(['id'=>$admin,'username'=>'teacher','role'=>'admin','enabled'=>false]));
+        rejects(fn()=>$users->save(['username'=>'bad','password'=>'new-account-password','role'=>'teacher','classrooms'=>['Missing']]));
+        $cookie=bin2hex(random_bytes(32));$sid=hash('sha256',$cookie);
+        $db->query('INSERT INTO sessions VALUES (?,?,?)',[$sid,'restricted',time()+60]);$session=$db->session($cookie);
+        same(array_column($db->accessibleRoster($session),'id'),['a']);check(!$db->canAccess($session,'Room B'),'Teacher escaped classroom scope.');
+        $db->query('INSERT INTO sessions VALUES (?,?,?)',[str_repeat('b',64),'supervisor',time()+60]);same(count($db->accessibleRoster($db->sessionById(str_repeat('b',64)))),2);
+        $token=bin2hex(random_bytes(32));$db->query('INSERT INTO tickets VALUES (?,?,?,?,?,?)',[hash('sha256',$token),$sid,'b','control',time()+30,$db->generation()]);
+        same($db->consumeTicket($token,$cookie),null); // Even a forged database ticket cannot cross classrooms.
+        $db->query('DELETE FROM tickets');$db->query('INSERT INTO tickets VALUES (?,?,?,?,?,?)',[hash('sha256',$token),$sid,'a','control',time()+30,$db->generation()]);
+        $auth=$db->consumeTicket($token,$cookie);check($db->authorizationValid($auth),'Valid teacher authorization rejected.');
+        $users->save(['id'=>$teacher,'username'=>'restricted','role'=>'teacher','classrooms'=>['Room B']]);
+        same($db->session($cookie),null);check(!$db->authorizationValid($auth),'Changed assignments did not revoke active access.');
+        foreach($users->listing() as $user)check(!array_key_exists('password_hash',$user),'Password hash exposed.');
+        $db->query('INSERT INTO sessions VALUES (?,?,?)',[$sid,'restricted',time()+60]);
+        $users->save(['id'=>$teacher,'username'=>'restricted','role'=>'teacher','enabled'=>false,'classrooms'=>['Room B']]);same($db->session($cookie),null);
+        Settings::save($db,['overview_max_connections'=>2]);same(Settings::apply($db,['overview_max_connections'=>3])['overview_max_connections'],2);
+        rejects(fn()=>Settings::save($db,['origin'=>'https://attacker.example']));rejects(fn()=>Settings::save($db,['overview_max_connections'=>0]));
+        $db=null;
+    }finally{foreach([$path,$path.'-wal',$path.'-shm'] as $file)if(is_file($file))unlink($file);}
 });
 runTest('Classroom command validation, Qt feature types and Wake-on-LAN packet', function (): void {
     same(bin2hex(Wire::uuid('ccb535a2-1d24-4cc1-a709-8b47d2b2ac79')), '0000001e00ccb535a21d244cc1a7098b47d2b2ac79');

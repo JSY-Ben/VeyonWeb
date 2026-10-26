@@ -12,9 +12,12 @@ function secret(string $prompt): string {
     finally {if($mode!=='')shell_exec('stty '.escapeshellarg($mode));fwrite(STDOUT,"\n");}
 }
 try {
+    if(!is_file(dirname(__DIR__).'/vendor/autoload.php'))throw new RuntimeException('Run composer install in the web directory before setup.');
+    require dirname(__DIR__).'/vendor/autoload.php';
     $path=dirname(__DIR__).'/config/local.php';
     $config=require (is_file($path)?$path:dirname(__DIR__).'/config/example.php');
-    $config['teacher_username']=ask('Teacher username [teacher]: ') ?: 'teacher';
+    $defaultAdmin=$config['teacher_username']??'admin';
+    $config['teacher_username']=ask('Administrator username ['.$defaultAdmin.']: ') ?: $defaultAdmin;
     if(!preg_match('/^[a-zA-Z0-9._-]{1,64}$/',$config['teacher_username']))throw new RuntimeException('Use letters, digits, dots, underscores or hyphens.');
     $origin=ask('Site origin [https://classroom.school.example]: ') ?: 'https://classroom.school.example';
     $parts=parse_url($origin);
@@ -25,7 +28,7 @@ try {
     if($base==='/')$base='';
     if($base!=='auto' && $base!=='' && !preg_match('~^(/[A-Za-z0-9_-][A-Za-z0-9._-]*)+/?$~D',$base))throw new RuntimeException('Use auto, a URL path such as /VeyonWeb, or / for the site root.');
     $config['base_path']=$base==='auto' ? null : rtrim($base,'/');
-    $password=secret('Teacher password (12–72 characters): ');
+    $password=secret('Administrator password (12–72 characters): ');
     if(strlen($password)<12||strlen($password)>72)throw new RuntimeException('Use a password of 12–72 bytes.');
     if(!hash_equals($password,secret('Confirm password: ')))throw new RuntimeException('Passwords did not match.');
     $config['origin']=$origin;$config['teacher_password_hash']=password_hash($password,defined('PASSWORD_ARGON2ID')?PASSWORD_ARGON2ID:PASSWORD_DEFAULT);
@@ -37,7 +40,11 @@ try {
     $data="<?php\ndeclare(strict_types=1);\nreturn ".var_export($config,true).";\n";
     $old=umask(0027);
     try{if(file_put_contents($path.'.tmp',$data,LOCK_EX)===false)throw new RuntimeException('Cannot write configuration.');chmod($path.'.tmp',0640);rename($path.'.tmp',$path);}finally{umask($old);}
-    echo "Teacher login saved in config/local.php. Configure the Veyon key or logon credentials there.\n";
+    $database=$config['database']??rtrim($config['data_directory'],'/').'/classroom.sqlite';
+    $users=new \Classroom\Users(new \Classroom\Database($database));
+    $users->provisionAdmin($config['teacher_username'],$config['teacher_password_hash']);
+    chmod($database,0660);
+    echo "Administrator account created/updated. Sign in and open Settings to manage users. Configure the Veyon key or logon credentials in config/local.php.\n";
     if(PHP_OS_FAMILY==='Linux') {
         $install=ask('Create the data directory and install/restart the systemd gateway service using sudo? [Y/n]: ');
         if($install==='' || in_array(strtolower($install),['y','yes'],true)) {

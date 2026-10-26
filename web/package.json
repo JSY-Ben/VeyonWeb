@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build.js",
-    "test": "php test/php-unit.php && php test/gateway-service.test.php && node --test test/browser-bundle.test.js test/downloads.test.js test/snapshots.test.js test/php-integration.test.js test/subdirectory.test.js"
+    "test": "php test/php-unit.php && php test/gateway-service.test.php && node --test test/browser-bundle.test.js test/downloads.test.js test/snapshots.test.js test/setup-users.test.js test/php-integration.test.js test/subdirectory.test.js test/users.test.js"
   },
   "license": "GPL-2.0-or-later",
   "description": "Optional browser asset build and integration test tools; PHP runs the application",

@@ -25,7 +25,7 @@ for (const automatic of [false, true]) test(`subdirectory page, assets, API and 
     assert.ok(ready,'PHP server started');
     const html=await (await fetch(origin+prefix+'/index.php')).text();
     assert.ok(html.includes(`<base href="${prefix}/">`));
-    for(const asset of ['app.js','rfb.js','veyon-rfb.js','classroom-actions.js','downloads.js','snapshots.js','style.css','fonts.css'])assert.equal((await fetch(origin+prefix+'/'+asset)).status,200);
+    for(const asset of ['app.js','rfb.js','veyon-rfb.js','classroom-actions.js','admin-settings.js','downloads.js','snapshots.js','style.css','fonts.css'])assert.equal((await fetch(origin+prefix+'/'+asset)).status,200);
     const endpoint=route=>origin+prefix+'/api.php?route='+encodeURIComponent(route);
     const session=await (await fetch(endpoint('/api/session'))).json();assert.equal(session.authenticated,false);
     const login=await fetch(endpoint('/api/login'),{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:'{}'});

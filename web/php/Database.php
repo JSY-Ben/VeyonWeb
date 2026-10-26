@@ -16,6 +16,12 @@ final class Database
             CREATE TABLE IF NOT EXISTS attempts (ip TEXT PRIMARY KEY, count INTEGER NOT NULL, expires INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS meta (name TEXT PRIMARY KEY, value INTEGER NOT NULL);
             INSERT OR IGNORE INTO meta VALUES (\'generation\', 0);');
+        $this->pdo->exec("CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL COLLATE NOCASE UNIQUE,
+            password_hash TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('admin','supervisor','teacher')),
+            enabled INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS user_classrooms (user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, room TEXT NOT NULL, PRIMARY KEY(user_id,room));
+            CREATE TABLE IF NOT EXISTS settings (name TEXT PRIMARY KEY, value TEXT NOT NULL);");
         if (!in_array('mac', array_column($this->query('PRAGMA table_info(computers)')->fetchAll(), 'name'), true)) {
             try { $this->pdo->exec("ALTER TABLE computers ADD COLUMN mac TEXT NOT NULL DEFAULT ''"); }
             catch (\PDOException $error) {
@@ -40,8 +46,28 @@ final class Database
     public function session(string $cookie): ?array
     {
         if (!preg_match('/^[a-f0-9]{64}$/', $cookie)) return null;
-        $session = $this->query('SELECT * FROM sessions WHERE id = ? AND expires > ?', [hash('sha256', $cookie), time()])->fetch();
+        $session = $this->sessionById(hash('sha256', $cookie));
         return $session ?: null;
+    }
+    public function sessionById(string $id): ?array
+    {
+        $session = $this->query('SELECT s.*, u.id AS user_id, u.role FROM sessions s JOIN users u ON u.username=s.username COLLATE NOCASE WHERE s.id=? AND s.expires>? AND u.enabled=1', [$id,time()])->fetch();
+        return $session ?: null;
+    }
+    public function canAccess(array $session, string $room): bool
+    {
+        if (in_array($session['role'], ['admin','supervisor'], true)) return true;
+        return (bool)$this->query('SELECT 1 FROM user_classrooms WHERE user_id=? AND room=?', [$session['user_id'],$room])->fetchColumn();
+    }
+    public function accessibleRoster(array $session): array
+    {
+        return array_values(array_filter($this->roster(), fn(array $computer) => $this->canAccess($session,$computer['room'])));
+    }
+    public function authorizationValid(array $auth): bool
+    {
+        $session=$this->sessionById($auth['session_id']);
+        $room=$this->query('SELECT room FROM computers WHERE id=?',[$auth['computer_id']])->fetchColumn();
+        return $session !== null && $room !== false && $this->canAccess($session,$room) && (int)$auth['generation']===$this->generation();
     }
     public function generation(): int { return (int)$this->query('SELECT value FROM meta WHERE name = \'generation\'')->fetchColumn(); }
     public function roster(): array { return $this->query('SELECT * FROM computers ORDER BY rowid')->fetchAll(); }
@@ -65,6 +91,7 @@ final class Database
         $this->transaction(function () use ($computers) {
             $this->query('DELETE FROM tickets'); $this->query('DELETE FROM computers');
             foreach ($computers as $c) $this->query('INSERT INTO computers (id,name,host,port,room,mac) VALUES (?,?,?,?,?,?)', [$c['id'], $c['name'], $c['host'], $c['port'], $c['room'], $c['mac'] ?? '']);
+            $this->query('DELETE FROM user_classrooms WHERE room NOT IN (SELECT DISTINCT room FROM computers)');
             $this->query('UPDATE meta SET value = value + 1 WHERE name = \'generation\'');
         });
     }
@@ -73,8 +100,8 @@ final class Database
         if (!preg_match('/^[a-f0-9]{64}$/', $token)) return null;
         return $this->transaction(function () use ($token, $cookie) {
             $session = $this->session($cookie); if (!$session) return null;
-            $ticket = $this->query('SELECT t.*, c.host, c.port FROM tickets t JOIN computers c ON c.id=t.computer_id WHERE t.id=? AND t.session_id=? AND t.expires>?', [hash('sha256', $token), $session['id'], time()])->fetch();
-            if (!$ticket || (int)$ticket['generation'] !== $this->generation()) return null;
+            $ticket = $this->query('SELECT t.*, c.host, c.port, c.room FROM tickets t JOIN computers c ON c.id=t.computer_id WHERE t.id=? AND t.session_id=? AND t.expires>?', [hash('sha256', $token), $session['id'], time()])->fetch();
+            if (!$ticket || (int)$ticket['generation'] !== $this->generation() || !$this->canAccess($session,$ticket['room'])) return null;
             $this->query('DELETE FROM tickets WHERE id=?', [$ticket['id']]); return $ticket;
         });
     }

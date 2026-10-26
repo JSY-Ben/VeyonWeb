@@ -4,6 +4,8 @@ use Classroom\Config;
 use Classroom\Database;
 use Classroom\Features;
 use Classroom\FeatureClient;
+use Classroom\Users;
+use Classroom\Settings;
 require dirname(__DIR__) . '/vendor/autoload.php';
 
 function respond(int $status, array $body): never { http_response_code($status); echo json_encode($body, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE); exit; }
@@ -27,20 +29,29 @@ try {
     if (strlen($raw) > 131072) respond(413, ['error' => 'Request is too large.']);
     $body = $raw !== '' ? json_decode($raw, true, 64, JSON_THROW_ON_ERROR) : [];
     $db = new Database($config['database']); $db->cleanup();
+    $users=new Users($db);
+    if($config['demo']){if(!$users->find('demo'))$users->bootstrap('demo',password_hash(bin2hex(random_bytes(16)),PASSWORD_DEFAULT));}
+    else $users->bootstrap($config['teacher_username'],$config['teacher_password_hash']);
+    $config=Settings::apply($db,$config);
     $session = $db->session($_COOKIE['classroom'] ?? '');
     $cookieOptions = ['expires' => time() + 28800, 'path' => $config['base_path'] . '/', 'secure' => str_starts_with($config['origin'], 'https://'), 'httponly' => true, 'samesite' => 'Strict'];
-    if ($route === '/api/session' && $method === 'GET') respond(200, ['authenticated' => $session !== null, 'username' => $session['username'] ?? null, 'demo' => $config['demo']]);
+    if ($route === '/api/session' && $method === 'GET') respond(200, $users->publicSession($session)+['demo'=>$config['demo'],'setupRequired'=>!(bool)$db->query('SELECT 1 FROM users LIMIT 1')->fetchColumn()]);
     if ($route === '/api/login' && $method === 'POST') {
-        $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+        $loginName=$config['demo']?'demo':(is_string($body['username']??null)?$body['username']:'');
+        // A user's successful login must not reset another account's failures.
+        $ip = ($_SERVER['REMOTE_ADDR'] ?? 'unknown').'|'.hash('sha256',strtolower($loginName));
         $attempt = $db->transaction(function () use ($db, $ip) {
             $db->query('INSERT INTO attempts (ip,count,expires) VALUES (?,1,?) ON CONFLICT(ip) DO UPDATE SET count=count+1', [$ip, time()+900]);
             return (int)$db->query('SELECT count FROM attempts WHERE ip=?', [$ip])->fetchColumn();
         });
         if ($attempt > 10) respond(429, ['error' => 'Too many attempts. Try again in 15 minutes.']);
-        if (!$config['demo'] && (($body['username'] ?? '') !== $config['teacher_username'] || !is_string($body['password'] ?? null) || strlen($body['password']) > 1024 || !password_verify($body['password'], $config['teacher_password_hash']))) respond(401, ['error' => 'Username or password is incorrect.']);
+        $account=$users->find($loginName);
+        $dummyHash='$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2uheWG/igi.';
+        $valid=$config['demo'] || (is_string($body['password']??null) && strlen($body['password'])<=1024 && password_verify($body['password'],$account['password_hash']??$dummyHash));
+        if (!$valid || !$account || !$account['enabled']) respond(401, ['error' => 'Username or password is incorrect.']);
         if ($session) $db->query('DELETE FROM sessions WHERE id=?', [$session['id']]);
         $token = bin2hex(random_bytes(32));
-        $db->query('INSERT INTO sessions VALUES (?,?,?)', [hash('sha256', $token), $config['demo'] ? 'Demo teacher' : $config['teacher_username'], time()+28800]);
+        $db->query('INSERT INTO sessions VALUES (?,?,?)', [hash('sha256', $token), $account['username'], time()+28800]);
         $db->query('DELETE FROM attempts WHERE ip=?', [$ip]);
         setcookie('classroom', $token, $cookieOptions); respond(200, ['ok' => true]);
     }
@@ -48,17 +59,43 @@ try {
         if ($session) $db->query('DELETE FROM sessions WHERE id=?', [$session['id']]);
         $cookieOptions['expires'] = 1; setcookie('classroom', '', $cookieOptions); respond(200, ['ok' => true]);
     }
-    if (!$session) respond(401, ['error' => 'Sign in to your teacher account.']);
+    if (!$session) respond(401, ['error' => 'Sign in to your account.']);
+    $isAdmin=$session['role']==='admin'&&!$config['demo'];
+    if(in_array($route,['/api/users','/api/settings'],true)){
+        if(!$isAdmin)respond(403,['error'=>'Administrator access is required.']);
+        if($route==='/api/users'){
+            if($method==='POST'||$method==='PUT'){
+                if(!is_array($body))respond(400,['error'=>'Invalid user.']);
+                if($method==='PUT'&&!isset($body['id']))respond(400,['error'=>'Choose a user to update.']);
+                if($method==='POST'&&isset($body['id']))respond(400,['error'=>'New users cannot specify an ID.']);
+                $id=$users->save($body);respond(200,['id'=>$id,'sessionRevoked'=>$db->sessionById($session['id'])===null]);
+            }
+            if($method==='DELETE'){
+                if(!is_int($body['id']??null))respond(400,['error'=>'Choose a valid user.']);
+                $users->delete($body['id']);respond(200,['ok'=>true,'sessionRevoked'=>$db->sessionById($session['id'])===null]);
+            }
+            if($method==='GET')respond(200,['users'=>$users->listing(),'classrooms'=>$db->query('SELECT DISTINCT room FROM computers ORDER BY room')->fetchAll(PDO::FETCH_COLUMN)]);
+        }else{
+            if($method==='PUT'){
+                if(!is_array($body)||array_is_list($body))respond(400,['error'=>'Invalid settings.']);
+                Settings::save($db,$body);$config=Settings::apply($db,$config);
+            }
+            if(in_array($method,['GET','PUT'],true))respond(200,['settings'=>Settings::values($config)]);
+        }
+        respond(405,['error'=>'Method not allowed.']);
+    }
     if ($route === '/api/computers' && $method === 'GET') {
-        $computers = $db->roster();
+        $computers = $db->accessibleRoster($session);
         if ($config['demo']) $computers = array_map(fn($i) => ['id' => "demo-$i", 'name' => 'Studio ' . str_pad((string)$i, 2, '0', STR_PAD_LEFT), 'host' => "studio-$i.school.local", 'port' => 11100, 'room' => $i <= 6 ? 'Design studio' : 'Library'], range(1, 8));
         respond(200, ['computers' => $computers, 'ready' => $config['demo'] || Config::ready($config), 'demo' => $config['demo'], 'authMethod' => $config['veyon']['method'], 'maxUploadBytes' => $config['max_upload_bytes'], 'overviewRefreshSeconds' => $config['overview_refresh_seconds'], 'overviewStaggerMs' => $config['overview_stagger_ms'], 'connectionTimeoutSeconds' => $config['connection_timeout_seconds'], 'previewTimeoutSeconds' => $config['preview_timeout_seconds'], 'overviewMaxConnections' => $config['overview_max_connections'], 'overviewRetrySeconds' => $config['overview_retry_seconds']]);
     }
     if ($route === '/api/computers' && $method === 'PUT') {
+        if(!$isAdmin)respond(403,['error'=>'Only administrators can edit computers or classrooms.']);
         if ($config['demo']) respond(403, ['error' => 'The sample classroom cannot be edited. Start the live server to add your computers.']);
         $values = Database::validateRoster($body); $db->saveRoster($values); respond(200, ['computers' => $values]);
     }
     if (($route === '/api/actions' || $upload) && $method === 'POST') {
+        if(!$isAdmin)respond(403,['error'=>'Classroom commands require administrator access. View, control and screenshots remain available for your classrooms.']);
         if ($config['demo']) respond(409, ['error' => 'Classroom actions are unavailable in sample mode.']);
         $input = $upload ? $_POST : $body;
         if (!is_array($input)) respond(400, ['error' => 'Invalid action request.']);
@@ -89,6 +126,7 @@ try {
         if ($config['demo']) respond(409, ['error' => 'Sample screens are simulated. Connect your Veyon computers for remote control.']);
         $computer = $db->query('SELECT * FROM computers WHERE id=?', [is_string($body['computerId'] ?? null) ? $body['computerId'] : ''])->fetch();
         if (!$computer) respond(404, ['error' => 'Computer not found.']);
+        if(!$db->canAccess($session,$computer['room']))respond(403,['error'=>'You do not have access to this classroom.']);
         if (!in_array($body['mode'] ?? null, ['view', 'control'], true)) respond(400, ['error' => 'Invalid session mode.']);
         if (!Config::ready($config)) respond(503, ['error' => 'Configure Veyon authentication on the PHP gateway first. See Connection & help.']);
         if ((int)$db->query('SELECT COUNT(*) FROM tickets')->fetchColumn() >= 512) respond(429, ['error' => 'Too many pending sessions. Try again shortly.']);

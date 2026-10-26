@@ -3,6 +3,7 @@ declare(strict_types=1);
 use Classroom\Bridge;
 use Classroom\Config;
 use Classroom\Database;
+use Classroom\Settings;
 use Workerman\Worker;
 use Workerman\Timer;
 use Workerman\Protocols\Websocket;
@@ -21,10 +22,8 @@ $worker->onWorkerStart = function () use (&$db,$config,&$bridges,&$authorization
     $db = new Database($config['database']);
     Timer::add(1,function () use ($db,&$bridges,&$authorizations,$worker): void {
         try {
-            $generation = $db->generation();
             foreach ($authorizations as $id => $auth) {
-                $valid = $db->query('SELECT 1 FROM sessions WHERE id=? AND expires>?',[$auth['session_id'],time()])->fetchColumn();
-                if (!$valid || (int)$auth['generation'] !== $generation) {
+                if (!$db->authorizationValid($auth)) {
                     if (isset($bridges[$id])) $bridges[$id]->fail('Teacher session ended or classroom directory changed.');
                     elseif (isset($worker->connections[$id])) $worker->connections[$id]->close();
                 }
@@ -52,9 +51,9 @@ $worker->onWebSocketConnect = function (TcpConnection $connection,Request $reque
         $connection->close("HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n",true);
     }
 };
-$worker->onWebSocketConnected = function (TcpConnection $connection) use (&$bridges,&$authorizations,$config): void {
+$worker->onWebSocketConnected = function (TcpConnection $connection) use (&$bridges,&$authorizations,&$db,$config): void {
     if (!isset($authorizations[$connection->id])) return;
-    try { $bridges[$connection->id] = new Bridge($connection,$authorizations[$connection->id],$config['veyon'],$config['connection_timeout_seconds'],$config['preview_timeout_seconds']); }
+    try { $effective=Settings::apply($db,$config);$bridges[$connection->id] = new Bridge($connection,$authorizations[$connection->id],$config['veyon'],$effective['connection_timeout_seconds'],$effective['preview_timeout_seconds']); }
     catch (\Throwable $error) { $connection->close(); }
 };
 $worker->onMessage = function (TcpConnection $connection,string $bytes) use (&$bridges): void {
