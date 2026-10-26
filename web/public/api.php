@@ -11,6 +11,12 @@ try {
     $config = Config::load();
     $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
     $route = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+    if (isset($_GET['route'])) {
+        if (!is_string($_GET['route'])) respond(400, ['error' => 'Invalid route.']);
+        $route = $_GET['route'];
+    } elseif ($config['base_path'] !== '' && str_starts_with($route, $config['base_path'] . '/')) {
+        $route = substr($route, strlen($config['base_path']));
+    }
     if (!in_array($method, ['GET', 'HEAD', 'OPTIONS'], true) && ($_SERVER['HTTP_ORIGIN'] ?? '') !== $config['origin']) respond(403, ['error' => 'Request origin rejected.']);
     if ((int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 131072) respond(413, ['error' => 'Request is too large.']);
     $raw = file_get_contents('php://input', false, null, 0, 131073);
@@ -18,7 +24,7 @@ try {
     $body = $raw !== '' ? json_decode($raw, true, 64, JSON_THROW_ON_ERROR) : [];
     $db = new Database($config['database']); $db->cleanup();
     $session = $db->session($_COOKIE['classroom'] ?? '');
-    $cookieOptions = ['expires' => time() + 28800, 'path' => '/', 'secure' => str_starts_with($config['origin'], 'https://'), 'httponly' => true, 'samesite' => 'Strict'];
+    $cookieOptions = ['expires' => time() + 28800, 'path' => $config['base_path'] . '/', 'secure' => str_starts_with($config['origin'], 'https://'), 'httponly' => true, 'samesite' => 'Strict'];
     if ($route === '/api/session' && $method === 'GET') respond(200, ['authenticated' => $session !== null, 'username' => $session['username'] ?? null, 'demo' => $config['demo']]);
     if ($route === '/api/login' && $method === 'POST') {
         $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
@@ -57,7 +63,8 @@ try {
         if ((int)$db->query('SELECT COUNT(*) FROM tickets')->fetchColumn() >= 512) respond(429, ['error' => 'Too many pending sessions. Try again shortly.']);
         $token = bin2hex(random_bytes(32));
         $db->query('INSERT INTO tickets VALUES (?,?,?,?,?,?)', [hash('sha256', $token), $session['id'], $computer['id'], $body['mode'], time()+30, $db->generation()]);
-        respond(200, ['path' => $config['websocket_url'] . '?ticket=' . $token]);
+        $socketPath = $config['websocket_url'] === '/remote' ? $config['base_path'] . '/remote' : $config['websocket_url'];
+        respond(200, ['path' => $socketPath . '?ticket=' . $token]);
     }
     respond(404, ['error' => 'API route not found.']);
 } catch (\JsonException | \InvalidArgumentException $error) { respond(400, ['error' => $error->getMessage()]); }

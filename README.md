@@ -73,6 +73,18 @@ If you change `data_directory` later, rerun setup to regenerate the service, or 
 
 ## Maintenance
 
+### Hosting under an existing website
+
+If Apache already serves this location and executes PHP, the page and login need no Apache changes. Set `'base_path' => null` in `web/config/local.php` (or select `auto` during setup). Open the public entry point directly, for example `https://bookit.highlands.ac.uk/Web/VeyonWeb/web/public/index.php`. Assets and API requests use that directory, and login cookies are scoped to it. Opening `index.php` explicitly avoids changing Apache's DirectoryIndex. Keep `origin` as the hostname origin without a path.
+
+Keep configuration, private keys and data outside the publicly accessible directory tree. If the whole checkout is inside an existing document root, verify those files are denied by existing server rules, or move the private files outside it (use `CLASSROOM_CONFIG` to select a configuration outside the checkout).
+
+For a fixed public prefix behind an alias or proxy, set `base_path` explicitly, such as `/VeyonWeb`. Remote viewing/control still needs the WebSocket proxy below; the page and login do not. Keep `websocket_url` as `/remote` for that proxy.
+
+Add [the subdirectory Apache example](web/deploy/apache-subdirectory.conf.example) inside your existing HTTPS virtual host, adjusting the alias, directory and proxy prefix. Expose only `web/public`, never the project directory containing configuration and private data. Use `DirectoryIndex index.php` so PHP supplies the configured base URL. The frontend calls `api.php` directly, so API rewrites are unnecessary. The WebSocket proxy strips the public prefix before forwarding to the gateway's `/remote` endpoint.
+
+Run `sudo apachectl configtest`, reload Apache and restart the gateway. For the example prefix, open `https://your-host/VeyonWeb/`.
+
 - Keep the dashboard and Veyon ports restricted to your trusted LAN or VPN.
 - Back up `web/config/local.php`, your Veyon private key and `web/data/classroom.sqlite`. Use SQLite's backup facility or stop services before copying the database.
 - For connection problems, check the Veyon credentials, PC reachability and access-control rules, then check Apache/PHP logs, `web/data/gateway.log` or `journalctl -u veyon-gateway`.

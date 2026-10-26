@@ -11,10 +11,19 @@ final class Config
         if (!is_array($values)) throw new \RuntimeException('Configuration must return an array.');
         $config = array_replace_recursive([
             'origin' => 'http://127.0.0.1:8080', 'teacher_username' => 'teacher', 'teacher_password_hash' => '',
-            'data_directory' => dirname(__DIR__) . '/data',
+            'base_path' => null, 'data_directory' => dirname(__DIR__) . '/data',
             'gateway_listen' => 'websocket://127.0.0.1:9001', 'websocket_url' => '/remote',
             'demo' => false, 'veyon' => ['method' => 'key', 'username' => 'teacher', 'key_name' => 'teacher', 'private_key_file' => '', 'password' => ''],
         ], $values);
+        // Direct PHP entry points work in an existing site without rewrites or aliases.
+        if ($config['base_path'] === null) {
+            $script = PHP_SAPI === 'cli' ? '' : ($_SERVER['SCRIPT_NAME'] ?? '');
+            $config['base_path'] = $script === '' ? '' : rtrim(str_replace('\\', '/', dirname($script)), '/.');
+        }
+        if (!is_string($config['base_path']) || ($config['base_path'] !== '' && !preg_match('~^(/[A-Za-z0-9_-][A-Za-z0-9._-]*)+/?$~D', $config['base_path']))) {
+            throw new \RuntimeException('Configure base_path as a URL path such as /VeyonWeb, or leave it empty.');
+        }
+        $config['base_path'] = rtrim($config['base_path'], '/');
         if (!is_string($config['data_directory']) || !str_starts_with($config['data_directory'], '/') || str_contains($config['data_directory'], "\0")) {
             throw new \RuntimeException('Configure data_directory as an absolute directory path.');
         }

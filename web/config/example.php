@@ -2,6 +2,9 @@
 declare(strict_types=1);
 return [
     'origin' => 'https://classroom.school.example',
+    // null detects the URL directory automatically; override with '/VeyonWeb'
+    // or '' for the site root if using a proxy or URL rewriting.
+    'base_path' => null,
     'teacher_username' => 'teacher',
     // Run php scripts/setup.php to create a password hash.
     'teacher_password_hash' => '',

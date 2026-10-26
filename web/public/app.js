@@ -1,4 +1,5 @@
-import RFB from '/rfb.js';
+import RFB from './rfb.js';
+const appBase = new URL('.', import.meta.url);
 const $ = selector => document.querySelector(selector);
 const icons = {
   grid:'<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
@@ -30,7 +31,8 @@ let toastTimer, pendingImport;
 function toast(text) { $('#toast').textContent = text; $('#toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => $('#toast').hidden = true, 5000); }
 function escapeHTML(value) { return String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 async function api(url, options = {}) {
-  const res = await fetch(url, { ...options, headers: { 'Content-Type': 'application/json', ...options.headers } });
+  const endpoint = new URL('api.php?route=' + encodeURIComponent(url), appBase);
+  const res = await fetch(endpoint, { ...options, headers: { 'Content-Type': 'application/json', ...options.headers } });
   const body = await res.json();
   if (res.status === 401 && url !== '/api/login') { stopAll(); $('#workspace').hidden = true; $('#login').hidden = false; }
   if (!res.ok) throw new Error(body.error || `Request failed (${res.status}).`);

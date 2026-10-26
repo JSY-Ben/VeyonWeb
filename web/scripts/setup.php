@@ -20,6 +20,11 @@ try {
     $parts=parse_url($origin);
     if(!$parts || !in_array($parts['scheme']??'',['http','https'],true) || empty($parts['host']) || isset($parts['path']) || isset($parts['query']) || isset($parts['fragment']) || isset($parts['user']))throw new RuntimeException('Enter a complete origin without a trailing slash.');
     if($parts['scheme']!=='https'&&!in_array($parts['host'],['127.0.0.1','localhost'],true))throw new RuntimeException('Network hosting requires HTTPS.');
+    $defaultBase=$config['base_path'] ?? 'auto';
+    $base=ask('URL base path ['.($defaultBase ?: '/').'; auto detects the URL, / for site root]: ') ?: $defaultBase;
+    if($base==='/')$base='';
+    if($base!=='auto' && $base!=='' && !preg_match('~^(/[A-Za-z0-9_-][A-Za-z0-9._-]*)+/?$~D',$base))throw new RuntimeException('Use auto, a URL path such as /VeyonWeb, or / for the site root.');
+    $config['base_path']=$base==='auto' ? null : rtrim($base,'/');
     $password=secret('Teacher password (12–72 characters): ');
     if(strlen($password)<12||strlen($password)>72)throw new RuntimeException('Use a password of 12–72 bytes.');
     if(!hash_equals($password,secret('Confirm password: ')))throw new RuntimeException('Passwords did not match.');

@@ -17,7 +17,7 @@
         Options -Indexes -MultiViews
         AllowOverride None
         Require all granted
-        DirectoryIndex index.html
+        DirectoryIndex index.php index.html
         RewriteEngine On
         RewriteRule ^api(?:/.*)?$ api.php [END]
     </Directory>

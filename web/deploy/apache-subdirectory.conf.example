@@ -1,0 +1,13 @@
+# Add inside your existing HTTPS VirtualHost. Replace /VeyonWeb in every
+# directive with base_path from config/local.php, and adjust the disk path.
+Alias /VeyonWeb /var/www/html/bookit.highlands.ac.uk/Web/VeyonWeb/web/public
+<Directory /var/www/html/bookit.highlands.ac.uk/Web/VeyonWeb/web/public>
+    Options -Indexes -MultiViews
+    AllowOverride None
+    Require all granted
+    DirectoryIndex index.php
+</Directory>
+ProxyRequests Off
+ProxyPreserveHost On
+ProxyPass /VeyonWeb/remote http://127.0.0.1:9001/remote upgrade=websocket timeout=3600
+ProxyPassReverse /VeyonWeb/remote http://127.0.0.1:9001/remote
