@@ -123,6 +123,7 @@ function connectOverview(computers) {
   overviewSnapshots?.stop();
   overviewSnapshots=new SnapshotOverview({
     interval:state.overviewRefreshSeconds*1000,
+    stagger:state.overviewStaggerMs??750,
     capture:async(computer,signal)=>{
       if(!snapshotURLs.has(computer.id))setStatus(computer.id,'connecting','Capturing a desktop picture…');
       if(!state.demo)return captureDesktop(computer,makeRFB,{signal});
@@ -146,6 +147,7 @@ function connectOverview(computers) {
 async function loadClassroom() {
   const data = await api('/api/computers'); Object.assign(state,{ computers:data.computers, ready:data.ready, demo:data.demo, maxUploadBytes:data.maxUploadBytes });
   state.overviewRefreshSeconds=data.overviewRefreshSeconds||10;
+  state.overviewStaggerMs=data.overviewStaggerMs??750;
   try{const saved=Number(localStorage.getItem(refreshStorageKey));if(Number.isInteger(saved)&&saved>=2&&saved<=3600)state.overviewRefreshSeconds=saved;}catch{}
   $('#overview-refresh').value=state.overviewRefreshSeconds;
   $('#demo-banner').hidden = !state.demo; $('#network-label').textContent = state.demo ? 'Sample workspace' : 'Local gateway';

@@ -15,6 +15,8 @@ return [
     'websocket_url' => '/remote',
     // Default overview snapshot interval; teachers can override it in the browser.
     'overview_refresh_seconds' => 10,
+    // Preview connections run one at a time, with this pause between PCs.
+    'overview_stagger_ms' => 750,
     // Wake-on-LAN is sent by the web server; use your subnet broadcast if needed.
     'wake_broadcast' => '255.255.255.255',
     // Also adjust PHP upload_max_filesize and post_max_size for file distribution.

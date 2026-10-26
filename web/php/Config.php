@@ -14,10 +14,12 @@ final class Config
             'base_path' => null, 'data_directory' => dirname(__DIR__) . '/data',
             'gateway_listen' => 'websocket://127.0.0.1:9001', 'websocket_url' => '/remote',
             'overview_refresh_seconds' => 10,
+            'overview_stagger_ms' => 750,
             'wake_broadcast' => '255.255.255.255', 'max_upload_bytes' => 20971520,
             'demo' => false, 'veyon' => ['method' => 'key', 'username' => 'teacher', 'key_name' => 'teacher', 'private_key_file' => '', 'password' => ''],
         ], $values);
         if (!is_int($config['overview_refresh_seconds']) || $config['overview_refresh_seconds'] < 2 || $config['overview_refresh_seconds'] > 3600) throw new \RuntimeException('overview_refresh_seconds must be an integer between 2 and 3600.');
+        if (!is_int($config['overview_stagger_ms']) || $config['overview_stagger_ms'] < 0 || $config['overview_stagger_ms'] > 10000) throw new \RuntimeException('overview_stagger_ms must be an integer between 0 and 10000.');
         if (!is_int($config['max_upload_bytes']) || $config['max_upload_bytes'] < 1 || $config['max_upload_bytes'] > 104857600) throw new \RuntimeException('max_upload_bytes must be between 1 and 104857600.');
         // Direct PHP entry points work in an existing site without rewrites or aliases.
         if ($config['base_path'] === null) {
