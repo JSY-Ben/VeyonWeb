@@ -65,7 +65,9 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 .room-search{margin-bottom:12px}
 #room-list{overflow:auto;min-height:48px;flex:1;padding:2px 3px 12px;scrollbar-width:thin}
 .room-search-empty{font-size:15px;padding:8px;color:#dae5ee}
-.sidebar-bottom{margin-top:auto;padding-top:8px}
+.sidebar-bottom{margin-top:16px;padding-top:16px;border-top:2px solid #ffffff45;flex-shrink:0}
+.sidebar #settings-button{background:#ffffff14;border:1px solid #ffffff50;font-weight:650}
+.sidebar #settings-button:hover{background:#ffffff26;border-color:#ffffff80}
 .network-state{display:none}
 .teacher-card{display:flex;align-items:center;gap:10px;padding:18px 0;border-top:1px solid #ffffff30;margin-top:14px}
 .teacher-card>div{flex:1;min-width:0}
@@ -318,9 +320,8 @@ main{margin-left:220px;width:calc(100% - 220px)}
 .room-search{grid-column:1/-1;margin:0}
 .room-search-empty{grid-column:1/-1}
 .sidebar #room-list{grid-column:1/-1;max-height:180px;min-height:0;padding-bottom:0}
-.sidebar-bottom{grid-column:1/-1;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:0}
+.sidebar-bottom{grid-column:1/-1;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:16px 0 0;margin-top:8px}
 .sidebar-bottom>.nav-item{width:auto;font-size:15px}
-.sidebar-bottom #help-button{display:none}
 .teacher-card{width:100%;padding:12px 0 0;margin-top:8px}
 .avatar{width:34px;height:34px}
 .sidebar-bottom .teacher-card small{font-size:14px}
