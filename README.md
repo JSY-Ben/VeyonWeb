@@ -21,7 +21,7 @@ Existing explicit configuration values take precedence over these new defaults. 
 
 ## Requirements
 
-`connection_timeout_seconds` is the **gateway-to-PC TCP connection timeout**, default 2 seconds (1–120). Once TCP connects, authentication has the separate `preview_timeout_seconds` budget, default 10 seconds (1–120). The browser also uses this longer budget for WebSocket setup, ticket acquisition and the first rendered picture, allowing time for external reverse proxies. Established remote sessions and subsequent file transfers do not expire after either connection deadline. Restart `veyon-gateway` after changing the timeouts, then reload the webpage.
+`connection_timeout_seconds` is the **gateway-to-PC TCP connection timeout**, default 2 seconds (1–120). Once TCP connects, authentication has the separate `preview_timeout_seconds` budget, default 10 seconds (1–120). The browser uses this longer budget for ticket acquisition and WebSocket setup, then starts a separate budget of the same length after connection for the first rendered picture. An initial preview timeout gets one retry after 2 seconds; repeated failures use the configured retry interval. This allows cold connections and initial screen capture to complete without opening a live view. Established remote sessions and subsequent file transfers do not expire after either connection deadline. Restart `veyon-gateway` after changing the timeouts, then reload the webpage.
 
 - Linux/Unix server with PHP 8.2+, Composer, and the OpenSSL, PDO SQLite, iconv, PCNTL and POSIX extensions.
 - Apache 2.4.47+ with HTTPS and the `ssl`, `rewrite`, `headers`, `proxy` and `proxy_http` modules, plus mod_php.

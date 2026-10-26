@@ -97,3 +97,38 @@ test('connection timeout includes ticket acquisition and closes a late connectio
     assert.equal(disconnected,2,'waiting for a first frame also has a bounded connection deadline');
   }finally{if(original===undefined)delete globalThis.document;else globalThis.document=original;}
 });
+
+
+test('cold connections receive a fresh first-picture budget after connecting',async()=>{
+  const original=globalThis.document;let removed=0,disconnected=0;
+  globalThis.document={createElement:()=>({remove(){removed++;}}),body:{append(){}}};
+  const timers=[];
+  try{
+    const picture=new Blob(['first picture']),rfb=new EventTarget();
+    rfb.disconnect=()=>{disconnected++;};rfb.toBlob=callback=>callback(picture);
+    const capturing=captureDesktop({id:'cold'},async()=>{
+      timers.push(setTimeout(()=>{rfb._rfbConnectionState='connected';rfb.dispatchEvent(new Event('connect'));},50));
+      timers.push(setTimeout(()=>{rfb.hasFrame=true;rfb.dispatchEvent(new Event('framebufferupdate'));},100));
+      return rfb;
+    },{timeout:80});
+    assert.equal(await capturing,picture,'Connecting and receiving a first picture are separately bounded');
+    assert.equal(removed,1);assert.equal(disconnected,1);
+    const noFrame=new EventTarget();noFrame._rfbConnectionState='connected';noFrame.disconnect=()=>{};
+    await assert.rejects(captureDesktop({id:'no-frame'},async()=>noFrame,{timeout:10}),error=>error.code==='PREVIEW_TIMEOUT'&&/first picture/.test(error.message));
+  }finally{for(const timer of timers)clearTimeout(timer);if(original===undefined)delete globalThis.document;else globalThis.document=original;}
+});
+
+test('an initial timeout retries once promptly without blocking other PCs or looping quickly',async()=>{
+  const clock=fakeClock(),starts=[],pictures=[];
+  const overview=new SnapshotOverview({...clock,capture:async computer=>{
+    starts.push([computer.id,clock.now()]);
+    if(computer.id==='slow')throw Object.assign(new Error('Connection timed out.'),{code:'PREVIEW_TIMEOUT'});
+    return 'picture';
+  },onSnapshot:computer=>pictures.push(computer.id),onError(){}});
+  overview.start([{id:'slow'},{id:'online'}]);await tick();await clock.advance(2000);
+  assert.deepEqual(pictures,['online']);
+  assert.deepEqual(starts.filter(([id])=>id==='slow'),[['slow',0],['slow',2000]]);
+  await clock.advance(59999);assert.equal(starts.filter(([id])=>id==='slow').length,2);
+  await clock.advance(1);assert.deepEqual(starts.filter(([id])=>id==='slow').at(-1),['slow',62000]);
+  overview.stop();assert.equal(clock.timers.size,0);
+});
