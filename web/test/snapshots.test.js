@@ -3,6 +3,20 @@ import assert from 'node:assert/strict';
 import {SnapshotOverview,waitForFrame,captureDesktop} from '../public/snapshots.js';
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 
+test('default browser timers retain their Window receiver across the stagger gap',async()=>{
+  const originalSet=globalThis.setTimeout,originalClear=globalThis.clearTimeout;
+  const timers=[];let overview;
+  globalThis.setTimeout=function(callback,delay){assert.equal(this,globalThis,'Safari requires a Window timer receiver');timers.push({callback,delay});return timers.length;};
+  globalThis.clearTimeout=function(id){assert.equal(this,globalThis);timers[id-1].cancelled=true;};
+  try{
+    const captured=[];
+    overview=new SnapshotOverview({capture:async computer=>computer.id,onSnapshot:(computer,blob)=>captured.push(blob),onError:error=>{throw error;}});
+    overview.start([{id:'first'},{id:'second'}]);await tick();assert.deepEqual(captured,['first']);
+    assert.equal(timers[0].delay,750);timers[0].callback();await tick();assert.deepEqual(captured,['first','second']);
+    overview.stop();assert.ok(timers[1].cancelled);
+  }finally{globalThis.setTimeout=originalSet;globalThis.clearTimeout=originalClear;}
+});
+
 test('snapshots are sequential, staggered after failures, and cancelled on navigation',async()=>{
   const pending=[],pictures=[],errors=[],timers=[];let active=0,peak=0,time=0;
   const overview=new SnapshotOverview({interval:10000,stagger:750,now:()=>time,

@@ -1,5 +1,5 @@
 import {download,safeName,screenshotZip} from './downloads.js';
-import {captureDesktop,waitForFrame} from './snapshots.js';
+import {captureDesktop,waitForFrame} from './snapshots.js?v=snapshot-stagger-20261026';
 const $=s=>document.querySelector(s);
 const labels={screenshot:'Capture screenshots',message:'Send message',lock:'Lock screens',unlock:'Unlock screens',website:'Open website',program:'Run program',wake:'Wake computers',reboot:'Restart computers',shutdown:'Shut down computers',logoff:'Log off users',files:'Distribute file'};
 const destructive=new Set(['reboot','shutdown','logoff']);

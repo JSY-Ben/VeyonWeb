@@ -1,6 +1,6 @@
-import RFB from './veyon-rfb.js';
-import {setupClassroomActions} from './classroom-actions.js';
-import {captureDesktop,SnapshotOverview} from './snapshots.js';
+import RFB from './veyon-rfb.js?v=snapshot-frame-20261026';
+import {setupClassroomActions} from './classroom-actions.js?v=snapshot-stagger-20261026';
+import {captureDesktop,SnapshotOverview} from './snapshots.js?v=snapshot-stagger-20261026';
 const appBase = new URL('.', import.meta.url);
 const $ = selector => document.querySelector(selector);
 const icons = {

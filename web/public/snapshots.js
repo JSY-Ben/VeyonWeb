@@ -40,7 +40,7 @@ export async function captureDesktop(computer, makeRFB, {signal, timeout=2000} =
 
 // Capture one computer at a time, with breathing room between connections.
 export class SnapshotOverview {
-  constructor({capture,onSnapshot,onError,interval=10000,stagger=750,schedule=setTimeout,unschedule=clearTimeout,now=Date.now}) {
+  constructor({capture,onSnapshot,onError,interval=10000,stagger=750,schedule=(callback,delay)=>globalThis.setTimeout(callback,delay),unschedule=timer=>globalThis.clearTimeout(timer),now=Date.now}) {
     Object.assign(this,{capture,onSnapshot,onError,interval,stagger,schedule,unschedule,now});
   }
   start(computers){this.stop();this.controller=new AbortController();this.round(computers,this.controller.signal);}
@@ -59,7 +59,12 @@ export class SnapshotOverview {
       if(signal.aborted)break;
       const computer=computers[i];
       try{const blob=await this.capture(computer,signal);if(!signal.aborted)this.onSnapshot(computer,blob);}
-      catch(error){if(!signal.aborted)this.onError(computer,error);}
+      catch(error){
+        if(!signal.aborted){
+          // A broken status element must not prevent the remaining PCs loading.
+          try{this.onError(computer,error);}catch(reportError){console.error('Could not update preview status.',reportError);}
+        }
+      }
     }
     if(!signal.aborted&&computers.length)this.timer=this.schedule(()=>this.round(computers,signal),Math.max(this.stagger,this.interval-(this.now()-started)));
   }
