@@ -6,6 +6,9 @@ Once installed, you can add any computer with a Veyon installation onto the dash
 
 Supported Veyon features include screenshots, text messages, screen lock/unlock, opening websites, running programs, Wake-on-LAN, restart/shutdown/logoff, and file distribution.
 
+<img width="2040" height="1046" alt="Screenshot 2026-10-26 at 11 03 31 PM" src="https://github.com/user-attachments/assets/a871ccb0-b326-4501-8243-9aae89f8e65c" />
+
+
 ## Requirements
 
 - Linux server with PHP 8.3+, Composer, and the OpenSSL, PDO SQLite, iconv, PCNTL and POSIX PHP extensions.
