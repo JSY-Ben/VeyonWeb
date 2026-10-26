@@ -11,7 +11,10 @@ export function setupClassroomActions({state,filtered,api,makeRFB,escapeHTML}) {
     const visible=filtered(),valid=new Set(visible.map(c=>c.id));
     for(const id of selected)if(!valid.has(id))selected.delete(id);
     $('#selection-count').textContent=`${selected.size} selected`;
-    $('#classroom-action').disabled=!selected.size;
+    document.querySelectorAll('[data-classroom-action]').forEach(button=>{
+      button.hidden=!state.canManage&&button.dataset.classroomAction!=='screenshot';
+      button.disabled=!selected.size;
+    });
     $('#clear-selection').disabled=!selected.size;
     $('#select-classroom').disabled=!visible.length;
     document.querySelectorAll('.select-computer').forEach(input=>{
@@ -28,9 +31,8 @@ export function setupClassroomActions({state,filtered,api,makeRFB,escapeHTML}) {
   function clearShots(){for(const url of objectURLs)URL.revokeObjectURL(url);objectURLs=[];shots=[];$('#download-screenshots').hidden=true;}
   function updateForm(){
     const action=$('#action-kind').value;
-    $('#action-kind').querySelectorAll('option').forEach(option=>{option.hidden=!state.canManage&&option.value!=='screenshot';option.disabled=option.hidden;});
     $('#action-title').textContent=labels[action];
-    $('#action-submit').textContent=action==='screenshot'?'Capture screenshots':'Send to listed computers';
+    $('#action-submit').textContent=labels[action];
     $('#action-targets').textContent=`${targets.length} computer${targets.length===1?'':'s'}: ${targets.map(c=>c.name).join(', ')}`;
     for(const field of form.querySelectorAll('[data-actions]')){
       const show=field.dataset.actions.split(' ').includes(action);field.hidden=!show;
@@ -96,8 +98,9 @@ export function setupClassroomActions({state,filtered,api,makeRFB,escapeHTML}) {
   };
   $('#select-classroom').onclick=()=>{for(const c of filtered())selected.add(c.id);refresh();};
   $('#clear-selection').onclick=()=>{selected.clear();refresh();};
-  $('#classroom-action').onclick=()=>open(state.canManage?'message':'screenshot');
-  $('#action-kind').onchange=updateForm;
+  document.querySelectorAll('[data-classroom-action]').forEach(button=>{
+    button.onclick=()=>open(button.dataset.classroomAction);
+  });
   $('#action-close').onclick=()=>{if(!busy)dialog.close();};
   $('#stop-actions').onclick=()=>{stopped=true;$('#stop-actions').disabled=true;$('#action-progress').textContent='Stopping after in-flight requests. Commands already sent cannot be recalled.';};
   dialog.addEventListener('cancel',event=>{if(busy)event.preventDefault();});

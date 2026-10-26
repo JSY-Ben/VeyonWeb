@@ -2,7 +2,7 @@ import {classroomFromURL,classroomURL} from './classroom-url.js?v=classroom-url-
 import {applyAppearance} from './appearance.js?v=appearance-20261026';
 import RFB from './veyon-rfb.js?v=snapshot-pixels-20261026';
 import {setupAdminSettings} from './admin-settings.js?v=connection-help-20261026';
-import {setupClassroomActions} from './classroom-actions.js?v=preview-start-20261026';
+import {setupClassroomActions} from './classroom-actions.js?v=action-buttons-20261026';
 import {captureDesktop,SnapshotOverview} from './snapshots.js?v=preview-start-20261026';
 const appBase = new URL('.', import.meta.url);
 const $ = selector => document.querySelector(selector);
@@ -228,7 +228,6 @@ async function showWorkspace(session) {
   $('#login').hidden=true;$('#workspace').hidden=false;$('#teacher-name').textContent=session.username;$('#teacher-initial').textContent=session.username[0]?.toUpperCase()||'U';
   $('#user-role-label').textContent=session.role==='admin'?'Administrator':session.role==='supervisor'?'Supervisor':'Teacher';
   for(const id of ['settings-button','add-computer','sidebar-add','roster-menu'])$(`#${id}`).hidden=!state.canManage;
-  $('#classroom-action').textContent=state.canManage?'Actions for selected PCs':'Screenshots for selected PCs';
   $('#help-dialog .setup-steps').hidden=!state.canManage&&!session.demo;
   await loadClassroom();
 }
