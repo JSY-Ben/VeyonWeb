@@ -12,7 +12,7 @@ const browserCompatibility = {
       const source = await readFile(path, 'utf8');
       const probe = 'exports.supportsWebCodecsH264Decode = supportsWebCodecsH264Decode = await _checkWebCodecsH264DecodeSupport();';
       if (!source.includes(probe)) throw new Error('noVNC codec probe changed; review the browser compatibility transform.');
-      return { contents: source.replace(probe, '_checkWebCodecsH264DecodeSupport().then(function(supported) { exports.supportsWebCodecsH264Decode = supportsWebCodecsH264Decode = supported; }).catch(function() { exports.supportsWebCodecsH264Decode = supportsWebCodecsH264Decode = false; });'), loader: 'js' };
+      return { contents: source.replace(probe, '_checkWebCodecsH264DecodeSupport().then(function(supported) { exports.supportsWebCodecsH264Decode = supportsWebCodecsH264Decode = supported; }).catch(function() { exports.supportsWebCodecsH264Decode = supportsWebCodecsH264Decode = false; });').replace('gotframe = true;', 'gotframe = true; frame.close();'), loader: 'js' };
     });
   },
 };

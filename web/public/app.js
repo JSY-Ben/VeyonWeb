@@ -1,4 +1,4 @@
-import RFB from './rfb.js';
+import RFB from './veyon-rfb.js';
 const appBase = new URL('.', import.meta.url);
 const $ = selector => document.querySelector(selector);
 const icons = {
