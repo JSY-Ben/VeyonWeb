@@ -1,12 +1,15 @@
 import {classroomFromURL,classroomURL} from './classroom-url.js?v=classroom-url-20261026';
 import {applyAppearance} from './appearance.js?v=appearance-20261026';
-import RFB from './veyon-rfb.js?v=snapshot-pixels-20261026';
+import RFB from './veyon-rfb.js?v=user-info-20261026';
 import {setupAdminSettings} from './admin-settings.js?v=connection-help-20261026';
 import {setupClassroomActions} from './classroom-actions.js?v=action-icons-20261026';
-import {captureDesktop,SnapshotOverview} from './snapshots.js?v=preview-start-20261026';
+import {captureDesktop,SnapshotOverview} from './snapshots.js?v=user-info-20261026';
+import {userInfoLabel} from './user-info.js?v=user-info-20261026';
+const computerUsers=new Map();
 const appBase = new URL('.', import.meta.url);
 const $ = selector => document.querySelector(selector);
 const icons = {
+  user:'<circle cx="12" cy="8" r="4"/><path d="M4 21v-2a8 8 0 0 1 16 0v2"/>',
   message:'<path d="M21 11a8 8 0 0 1-8 8H6l-4 3V11a9 9 0 0 1 19 0Z"/><path d="M7 9h10M7 13h6"/>',
   unlock:'<rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0M12 14v3"/>',
   globe:'<circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18"/>',
@@ -87,7 +90,7 @@ function stopOverview() {
   state.connections.clear(); state.statuses.clear();
 }
 function clearSnapshots(){for(const url of snapshotURLs.values())URL.revokeObjectURL(url);snapshotURLs.clear();document.querySelectorAll('.snapshot-image').forEach(image=>image.remove());}
-function stopAll() { adminSettings?.close();document.querySelectorAll('dialog[open]').forEach(dialog=>dialog.close());clearSnapshots();classroomActions.stop();state.monitoring = false; closeRemote(); stopOverview(); }
+function stopAll() { computerUsers.clear(); adminSettings?.close();document.querySelectorAll('dialog[open]').forEach(dialog=>dialog.close());clearSnapshots();classroomActions.stop();state.monitoring = false; closeRemote(); stopOverview(); }
 function updateClassroomURL(replace=false){
   const url=classroomURL(location.href,state.room);
   if(url.href!==location.href)history[replace?'replaceState':'pushState'](null,'',url.href);
@@ -122,7 +125,13 @@ function updateStats() {
   $('#online-label').textContent = state.demo ? 'sample pictures' : 'previews ready';
   $('#idle-label').textContent = state.monitoring ? 'awaiting preview' : 'ready to refresh';
 }
+function setComputerUser(id,info){
+  computerUsers.set(id,info);
+  const label=document.getElementById(`user-${id}`);
+  if(label){label.textContent=userInfoLabel(info);label.title=info?'Signed-in user reported by Veyon':'User information could not be retrieved.';}
+}
 function setStatus(id, kind, text) {
+  if(kind==='error')setComputerUser(id,null);
   state.statuses.set(id, { kind, text });
   const card = document.getElementById(`computer-${id}`); if (!card) return;
   const label = card.querySelector('.computer-state'); label.className = `computer-state ${kind}`;
@@ -139,7 +148,7 @@ function render() {
   stopOverview(); clearSnapshots(); renderNavigation();
   const list = filtered(), page = currentPage();
   $('#view-count').textContent = list.length;
-  $('#computer-grid').innerHTML = page.map(c => `<article class="computer-card" id="computer-${c.id}"><label class="card-select"><input type="checkbox" class="select-computer" data-id="${c.id}" aria-label="Select ${escapeHTML(c.name)}">Select</label><div class="screen-wrap"><div class="thumbnail" id="screen-${c.id}"></div><div class="screen-placeholder">${icon('monitor')}<span>Ready to refresh</span></div><span class="screen-tag" hidden><span class="dot"></span>${state.demo ? 'SAMPLE PICTURE' : 'SNAPSHOT'}</span></div><div class="card-info"><div class="card-heading"><h3>${escapeHTML(c.name)}</h3><span class="computer-state"><span class="dot"></span>Not refreshed</span></div><p class="computer-address">${escapeHTML(c.host)} <span>· ${escapeHTML(c.room)}</span></p><div class="card-actions"><button class="button secondary view-button" data-id="${c.id}">${icon('eye')}View</button><button class="button control-button" data-id="${c.id}">${icon('pointer')}Remote control</button>${state.canManage?`<button class="icon-button edit-button" data-id="${c.id}" aria-label="Edit ${escapeHTML(c.name)}" title="Edit computer">${icon('edit')}<span>Edit</span></button>`:''}</div></div></article>`).join('');
+  $('#computer-grid').innerHTML = page.map(c => `<article class="computer-card" id="computer-${c.id}"><label class="card-select"><input type="checkbox" class="select-computer" data-id="${c.id}" aria-label="Select ${escapeHTML(c.name)}">Select</label><div class="screen-wrap"><div class="thumbnail" id="screen-${c.id}"></div><div class="screen-placeholder">${icon('monitor')}<span>Ready to refresh</span></div><span class="screen-tag" hidden><span class="dot"></span>${state.demo ? 'SAMPLE PICTURE' : 'SNAPSHOT'}</span></div><div class="card-info"><div class="card-heading"><h3>${escapeHTML(c.name)}</h3><span class="computer-state"><span class="dot"></span>Not refreshed</span></div><p class="computer-address">${escapeHTML(c.host)} <span>· ${escapeHTML(c.room)}</span></p><p class="computer-user" aria-label="Signed-in user">${icon('user')}<span id="user-${c.id}">${escapeHTML(userInfoLabel(computerUsers.get(c.id)))}</span></p><div class="card-actions"><button class="button secondary view-button" data-id="${c.id}">${icon('eye')}View</button><button class="button control-button" data-id="${c.id}">${icon('pointer')}Remote control</button>${state.canManage?`<button class="icon-button edit-button" data-id="${c.id}" aria-label="Edit ${escapeHTML(c.name)}" title="Edit computer">${icon('edit')}<span>Edit</span></button>`:''}</div></div></article>`).join('');
   $('#computer-grid').querySelectorAll('.view-button').forEach(b => b.onclick = () => openRemote(b.dataset.id, 'view'));
   $('#computer-grid').querySelectorAll('.control-button').forEach(b => b.onclick = () => openRemote(b.dataset.id, 'control'));
   $('#computer-grid').querySelectorAll('.edit-button').forEach(b => b.onclick = () => editComputer(b.dataset.id));
@@ -167,6 +176,10 @@ async function makeRFB(computer, target, mode, {signal} = {}) {
   const connected=()=>clearTimeout(connectionTimer);
   rfb.addEventListener('connect',connected,{once:true});
   rfb.addEventListener('disconnect',()=>{clearTimeout(connectionTimer);rfb.removeEventListener('connect',connected);},{once:true});
+  let userInfoActive=true;
+  rfb.addEventListener('disconnect',()=>{userInfoActive=false;},{once:true});
+  rfb.addEventListener('userinfo',event=>{if(userInfoActive&&target.isConnected&&!signal?.aborted)setComputerUser(computer.id,event.detail);});
+  rfb.addEventListener('connect',()=>rfb.requestUserInfo(),{once:true});
   rfb.viewOnly = mode === 'view'; rfb.scaleViewport = true; rfb.resizeSession = false; rfb.showDotCursor = mode === 'control';
   rfb.qualityLevel = mode === 'control' ? 6 : 2; rfb.compressionLevel = 6;
   rfb.clipViewport = false; rfb.background = '#10251f';
@@ -189,6 +202,7 @@ function connectOverview(computers) {
     capture:async(computer,signal)=>{
       if(!snapshotURLs.has(computer.id))setStatus(computer.id,'connecting','Capturing a desktop picture…');
       if(!state.demo)return captureDesktop(computer,makeRFB,{signal,timeout:(state.previewTimeoutSeconds??10)*1000});
+      setComputerUser(computer.id,{login:`student${computer.id.split('-')[1]}`,fullName:''});
       const staging=document.createElement('div');staging.className='screenshot-staging';document.body.append(staging);
       const demo=demoScreen(staging,computer,false);
       try{return await new Promise((resolve,reject)=>staging.querySelector('canvas').toBlob(blob=>blob?resolve(blob):reject(new Error('Sample snapshot unavailable.')),'image/png'));}

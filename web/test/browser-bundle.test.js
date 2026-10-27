@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {userInfoFrame} from './reference-protocol.js';
 
 test('browser bundle loads without CommonJS globals', async () => {
   const element=()=>({style:{},offsetWidth:100,appendChild(child){child.parentNode=this;},removeChild(){},getContext(){return {};}});
@@ -53,6 +54,16 @@ test('browser bundle loads without CommonJS globals', async () => {
       client._FBU.rects=1;client._framebufferUpdate=()=>false;
       assert.equal(client._normalMsg(),false);
       assert.equal(queue.length,5);
+    }
+    const userFrame=userInfoFrame('school\\student','Élodie Student');
+    for(let split=1;split<userFrame.length;split++){
+      let bytes=userFrame.subarray(0,split),info;
+      const client=Object.create(RFB.prototype);client._FBU={rects:0};
+      client._sock={rQwait:(_label,n)=>bytes.length<n,rQpeek8:()=>bytes[0],rQpeekBytes:n=>bytes.subarray(0,n),rQskipBytes:n=>{bytes=bytes.subarray(n);}};
+      client.dispatchEvent=event=>{info=event.detail;};
+      assert.equal(client._normalMsg(),false);assert.equal(bytes.length,split);
+      bytes=Buffer.concat([bytes,userFrame.subarray(split)]);assert.equal(client._normalMsg(),true);
+      assert.deepEqual(info,{login:'school\\student',fullName:'Élodie Student'});assert.equal(bytes.length,0);
     }
     await new Promise(resolve=>setImmediate(resolve));
   } finally {

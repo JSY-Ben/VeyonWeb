@@ -8,6 +8,8 @@ import path from 'node:path';
 import { tmpdir, userInfo } from 'node:os';
 import { WebSocket } from 'ws';
 import { fakeVeyon, privateKey } from './fixture.js';
+import {userInfoRequest,decodeUserInfo} from '../public/user-info.js';
+import {userInfoFrame} from './reference-protocol.js';
 import { decodeFeatures } from './reference-protocol.js';
 
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
@@ -93,6 +95,9 @@ for(const method of ['key','logon'])test(`${apache?'Apache/PHP-FPM':'PHP HTTP'} 
     assert.equal(closeCode,1011);assert.match(closeReason.toString(),/timed out/i);assert.ok(Date.now()-gatewayStarted>=2500,'Gateway separates TCP connection and authentication budgets');assert.ok(Date.now()-gatewayStarted<5000,'Gateway connection deadline');
     const readonly=await open('view'),key=Buffer.from([4,1,0,0,0,0,0,65]),pointer=Buffer.from([5,1,0,10,0,20]),update=Buffer.from([3,0,0,0,0,0,0,2,0,2]);
     readonly.ws.send(Buffer.concat([key,pointer,update]));await delay(80);assert.deepEqual(Buffer.concat(input),update);input.length=0;
+    readonly.ws.send(userInfoRequest);await delay(80);assert.deepEqual(Buffer.concat(input),Buffer.from(userInfoRequest));input.length=0;
+    const userFrame=userInfoFrame('SCHOOL\\student1','Student One');fake.sendFrame(userFrame);
+    assert.deepEqual(decodeUserInfo((await readonly.next()).subarray(5)),{login:'SCHOOL\\student1',fullName:'Student One'});
     const frame=Buffer.alloc(32);frame.writeUInt16BE(1,2);frame.writeUInt16BE(2,8);frame.writeUInt16BE(2,10);frame.fill(255,16);fake.sendFrame(frame);assert.deepEqual(await readonly.next(),frame);
     const replay=new WebSocket(new URL(readonly.ticket.path,origin.replace('http','ws')),{headers:{Origin:origin,Cookie:cookie}});replay.on('error',()=>{});await once(replay,'unexpected-response').then(([req,res])=>{assert.equal(res.statusCode,403);res.resume();req.destroy();});
     const control=await open('control');control.ws.send(Buffer.concat([key,pointer]));await delay(80);assert.deepEqual(Buffer.concat(input),Buffer.concat([key,pointer]));

@@ -133,3 +133,8 @@ export class ClientFilter {
     return output;
   }
 }
+
+export function userInfoFrame(login,fullName){
+  const payload=Buffer.concat([u32(30),Buffer.from([0]),Buffer.from('79a5e74d50bd4aab80120e70dc08cc72','hex'),variant(0),u32(8),Buffer.from([0]),u32(2),variant('0').subarray(5),variant(login),variant('1').subarray(5),variant(fullName)]);
+  return Buffer.concat([Buffer.from([41]),u32(payload.length),payload]);
+}

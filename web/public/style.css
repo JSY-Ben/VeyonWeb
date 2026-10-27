@@ -407,3 +407,6 @@ dialog{padding:20px;width:calc(100vw - 20px)}
 .settings-dialog[aria-busy="true"] .settings-section{opacity:.55}
 
 .primary,.card-actions .control-button,.view-switch button[aria-pressed="true"],.settings-tabs button[aria-pressed="true"]{border-color:var(--focus)}
+
+.computer-user{display:flex;align-items:center;gap:6px;font-size:14px;color:var(--muted);margin:0 0 12px;overflow-wrap:anywhere}
+.computer-user svg{width:16px;height:16px}

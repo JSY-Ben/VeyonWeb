@@ -81,6 +81,16 @@ runTest('Qt wire fixtures and Unicode',function (): void {
     same(Wire::decode(Wire::variant(3).Wire::variant('tëacher').Wire::variant("\x01\x02",true)),[3,'tëacher',"\x01\x02"]);
     rejects(fn() => Wire::decode(hex2bin('0000000a000000004000')));
 });
+runTest('Read-only user queries pass fragmented filters and other feature commands are rejected',function (): void {
+    $query=Wire::feature('79a5e74d-50bd-4aab-8012-0e70dc08cc72');
+    foreach ([true,false] as $viewOnly) {
+        $filter=new RfbFilter($viewOnly);$output='';
+        foreach(str_split($query) as $byte)$output.=$filter->push($byte);
+        same($output,$query);
+        rejects(fn() => (new RfbFilter($viewOnly))->push(Features::command('lock',[])));
+        rejects(fn() => (new RfbFilter($viewOnly))->push(Wire::feature('79a5e74d-50bd-4aab-8012-0e70dc08cc72',1)));
+    }
+});
 runTest('Read-only filtering rejects keyboard/mouse/clipboard/resize across fragmented packets',function (): void {
     $key=hex2bin('0401000000000041'); $pointer=hex2bin('0501000a0014'); $update=hex2bin('03000000000000020002'); $clipboard=hex2bin('060000000000000141');
     $input=$key.$pointer.$clipboard.$update; $filter=new RfbFilter(true); $output='';
