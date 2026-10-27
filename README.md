@@ -61,11 +61,3 @@ The **Appearance** tab in Settings controls the app name, primary colour, light/
 
 
 This is an independent community client. Application source is GPL-2.0-or-later; noVNC is MPL-2.0. See [LICENSE](LICENSE) and [THIRD_PARTY.md](THIRD_PARTY.md).
-
-## Application and database versions
-
-The app footer displays `Powered by VeyonWeb - Version 0.5 (Beta)`. Its version is read from [`web/VERSION`](web/VERSION) through the public branding API; edit that file for future releases. No frontend rebuild is needed.
-
-Database schema versions follow the app's numeric version in `web/VERSION`, currently **0.5**. The database stores this readable value in `schema_metadata.version`. SQLite's integer-only `PRAGMA user_version` encodes it as `major × 1,000,000 + minor × 1,000 + patch` (0.5 → 5000). Beta labels do not change the schema number. Each app release advances the database version automatically, even when there are no table changes.
-
-New, unversioned, and original schema-1 databases upgrade automatically on first access without replacing existing data. Updates run in a transaction under a write lock. For future structural changes, add ordered migration steps in `web/php/Database.php` before recording the new version. Older app releases reject newer database versions. Back up the database before deploying a schema change.
