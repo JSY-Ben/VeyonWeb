@@ -1,18 +1,9 @@
 import RFB from './rfb.js';
-import {decodeUserInfo,userInfoRequest} from './user-info.js?v=user-info-20261026';
+import {decodeUserInfo,isUserInfo,userInfoRequest} from './user-info.js?v=user-info-performance-20261027';
 
 export default class VeyonRFB extends RFB {
   requestUserInfo() {
     this._sock.sQpushBytes(userInfoRequest);this._sock.flush();
-  }
-
-  waitForUserInfo(timeout=500) {
-    if(this.userInfo!==undefined)return Promise.resolve();
-    return new Promise(resolve=>{
-      const done=()=>{clearTimeout(timer);this.removeEventListener('userinfo',done);this.removeEventListener('disconnect',done);resolve();};
-      const timer=setTimeout(done,timeout);
-      this.addEventListener('userinfo',done,{once:true});this.addEventListener('disconnect',done,{once:true});
-    });
   }
 
   _handleDataRect() {
@@ -45,10 +36,13 @@ export default class VeyonRFB extends RFB {
       const length = new DataView(header.buffer, header.byteOffset + 1, 4).getUint32(0);
       if (length > 1048576) return this._fail('Veyon feature message exceeds its size limit.');
       if (this._sock.rQwait('Veyon feature payload', 5 + length)) return false;
-      const payload=this._sock.rQpeekBytes(5+length).slice(5);
+      // Inspect only the UUID before copying a payload: other feature messages
+      // can be large and are irrelevant to the dashboard.
+      const relevant=length>=21&&isUserInfo(this._sock.rQpeekBytes(26).subarray(5));
+      const payload=relevant?this._sock.rQpeekBytes(5+length).subarray(5):null;
       this._sock.rQskipBytes(5 + length);
       try {
-        const info=decodeUserInfo(payload);
+        const info=payload?decodeUserInfo(payload):null;
         if(info){this.userInfo=info;this.dispatchEvent(new CustomEvent('userinfo',{detail:info}));}
       }catch{/* Malformed optional metadata must not interrupt desktop pictures. */}
       return true;

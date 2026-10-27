@@ -3,6 +3,17 @@
 const userInfoId='79a5e74d50bd4aab80120e70dc08cc72';
 export const userInfoRequest=Uint8Array.from(('29000000270000001e00'+userInfoId+'000000020000000000000000080000000000').match(/../g),byte=>parseInt(byte,16));
 
+const userInfoUuid=Uint8Array.from(userInfoId.match(/../g),byte=>parseInt(byte,16));
+export function isUserInfo(bytes){
+  return bytes.length>=21&&bytes[0]===0&&bytes[1]===0&&bytes[2]===0&&bytes[3]===30&&userInfoUuid.every((byte,index)=>bytes[index+5]===byte);
+}
+
+// Each computer shares a request budget across previews and full-motion sessions.
+export function shouldQueryUserInfo(requests,id,now=Date.now()){
+  if(requests.has(id)&&now-requests.get(id)<60000)return false;
+  requests.set(id,now);return true;
+}
+
 export function decodeUserInfo(bytes){
   let offset=0;
   const take=size=>{if(size<0||offset+size>bytes.length)throw new Error('Truncated user information');const value=bytes.subarray(offset,offset+size);offset+=size;return value;};

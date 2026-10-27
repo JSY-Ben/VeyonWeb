@@ -132,3 +132,15 @@ test('an initial timeout retries once promptly without blocking other PCs or loo
   await clock.advance(1);assert.deepEqual(starts.filter(([id])=>id==='slow').at(-1),['slow',62000]);
   overview.stop();assert.equal(clock.timers.size,0);
 });
+
+test('optional user metadata never delays a ready picture or occupies a preview slot',async()=>{
+  const original=globalThis.document;let disconnected=false;
+  globalThis.document={createElement:()=>({remove(){}}),body:{append(){}}};
+  try{
+    const picture=new Blob(['desktop']);
+    const rfb={hasFrame:true,disconnect(){disconnected=true;},toBlob(callback){callback(picture);},
+      waitForUserInfo(){assert.fail('Preview capture must not wait for optional user metadata.');}};
+    assert.equal(await captureDesktop({id:'pc'},async()=>rfb),picture);
+    assert.ok(disconnected,'release the connection as soon as the picture is captured');
+  }finally{if(original===undefined)delete globalThis.document;else globalThis.document=original;}
+});

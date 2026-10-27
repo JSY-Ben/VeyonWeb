@@ -1,5 +1,5 @@
 import {download,safeName,screenshotZip} from './downloads.js';
-import {captureDesktop,waitForFrame} from './snapshots.js?v=preview-start-20261026';
+import {captureDesktop,waitForFrame} from './snapshots.js?v=user-info-performance-20261027';
 const $=s=>document.querySelector(s);
 const labels={screenshot:'Capture screenshots',message:'Send message',lock:'Lock screens',unlock:'Unlock screens',website:'Open Website',program:'Open Program',wake:'Wake computers',reboot:'Restart computers',shutdown:'Shut down computers',logoff:'Log off users',files:'Send Files'};
 const destructive=new Set(['reboot','shutdown','logoff']);

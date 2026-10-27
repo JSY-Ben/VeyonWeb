@@ -1,11 +1,11 @@
 import {classroomFromURL,classroomURL} from './classroom-url.js?v=classroom-url-20261026';
 import {applyAppearance} from './appearance.js?v=appearance-20261026';
-import RFB from './veyon-rfb.js?v=user-info-20261026';
+import RFB from './veyon-rfb.js?v=user-info-performance-20261027';
 import {setupAdminSettings} from './admin-settings.js?v=connection-help-20261026';
-import {setupClassroomActions} from './classroom-actions.js?v=action-icons-20261026';
-import {captureDesktop,SnapshotOverview} from './snapshots.js?v=user-info-20261026';
-import {userInfoLabel} from './user-info.js?v=user-info-20261026';
-const computerUsers=new Map();
+import {setupClassroomActions} from './classroom-actions.js?v=user-info-performance-20261027';
+import {captureDesktop,SnapshotOverview} from './snapshots.js?v=user-info-performance-20261027';
+import {userInfoLabel,shouldQueryUserInfo} from './user-info.js?v=user-info-performance-20261027';
+const computerUsers=new Map(),userInfoRequests=new Map();
 const appBase = new URL('.', import.meta.url);
 const $ = selector => document.querySelector(selector);
 const icons = {
@@ -90,7 +90,7 @@ function stopOverview() {
   state.connections.clear(); state.statuses.clear();
 }
 function clearSnapshots(){for(const url of snapshotURLs.values())URL.revokeObjectURL(url);snapshotURLs.clear();document.querySelectorAll('.snapshot-image').forEach(image=>image.remove());}
-function stopAll() { computerUsers.clear(); adminSettings?.close();document.querySelectorAll('dialog[open]').forEach(dialog=>dialog.close());clearSnapshots();classroomActions.stop();state.monitoring = false; closeRemote(); stopOverview(); }
+function stopAll() { computerUsers.clear();userInfoRequests.clear(); adminSettings?.close();document.querySelectorAll('dialog[open]').forEach(dialog=>dialog.close());clearSnapshots();classroomActions.stop();state.monitoring = false; closeRemote(); stopOverview(); }
 function updateClassroomURL(replace=false){
   const url=classroomURL(location.href,state.room);
   if(url.href!==location.href)history[replace?'replaceState':'pushState'](null,'',url.href);
@@ -179,7 +179,7 @@ async function makeRFB(computer, target, mode, {signal} = {}) {
   let userInfoActive=true;
   rfb.addEventListener('disconnect',()=>{userInfoActive=false;},{once:true});
   rfb.addEventListener('userinfo',event=>{if(userInfoActive&&target.isConnected&&!signal?.aborted)setComputerUser(computer.id,event.detail);});
-  rfb.addEventListener('connect',()=>rfb.requestUserInfo(),{once:true});
+  rfb.addEventListener('connect',()=>{if(shouldQueryUserInfo(userInfoRequests,computer.id))rfb.requestUserInfo();},{once:true});
   rfb.viewOnly = mode === 'view'; rfb.scaleViewport = true; rfb.resizeSession = false; rfb.showDotCursor = mode === 'control';
   rfb.qualityLevel = mode === 'control' ? 6 : 2; rfb.compressionLevel = 6;
   rfb.clipViewport = false; rfb.background = '#10251f';

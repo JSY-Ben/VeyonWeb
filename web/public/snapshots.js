@@ -45,7 +45,6 @@ export async function captureDesktop(computer, makeRFB, {signal, timeout=10000} 
       await waitForFrame(rfb,{signal:controller.signal,timeout:null});
       const blob=await new Promise((resolve,reject)=>rfb.toBlob(image=>image?resolve(image):reject(new Error('Snapshot unavailable.')),'image/png'));
       clearTimeout(timer);
-      await rfb.waitForUserInfo?.();
       controller.signal.throwIfAborted();return blob;
     }finally{cleanup();}
   };
