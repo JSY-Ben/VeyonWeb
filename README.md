@@ -8,7 +8,7 @@ Once installed, you can add any computer with a Veyon installation onto the dash
 
 Supported Veyon features include screenshots, text messages, screen lock/unlock, opening websites, running programs, Wake-on-LAN, restart/shutdown/logoff, and file distribution.
 
-<img width="2040" height="1046" alt="Screenshot 2026-10-26 at 11 03 31 PM" src="https://github.com/user-attachments/assets/a871ccb0-b326-4501-8243-9aae89f8e65c" />
+<img width="1752" height="898" alt="VeyonWebScreenshot" src="https://github.com/user-attachments/assets/dbf9ba1c-2988-4a2f-8746-3d0fd0a7b054" />
 
 
 ## Requirements
